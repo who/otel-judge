@@ -1,5 +1,6 @@
 import { Agent } from "agents";
 import { INITIAL_STATE, type JudgeState } from "./state";
+import { countPackets, ensureSchema, sqlTag } from "./store";
 
 /**
  * Errors are JSON with a stable machine-readable code, never HTML: every caller
@@ -30,11 +31,26 @@ export class OtelJudgeAgent extends Agent<Env, JudgeState> {
   /**
    * The one designated place startup work is invoked.
    *
-   * Empty for now on purpose: otel-judge-9f0.2 creates the SQLite tables and
-   * rehydrates `packets_seen` here, and having exactly one hook means a cold
-   * start never races two initialisation paths against each other.
+   * Tables first, then the counter: having exactly one hook means a cold start
+   * never races two initialisation paths against each other. Both steps are
+   * synchronous, so the Agent cannot answer a request before its storage is
+   * ready and its snapshot tells the truth.
+   *
+   * The snapshot is only written when the stored count differs from what is
+   * published. A freshly created Agent has nothing stored and therefore
+   * broadcasts nothing, which is what keeps a cold instance identical to
+   * `INITIAL_STATE`; `updated_at` is deliberately left alone because recovering
+   * a count is not news about a packet.
    */
-  override onStart(): void {}
+  override onStart(): void {
+    const sql = sqlTag(this);
+    ensureSchema(sql);
+
+    const seen = countPackets(sql);
+    if (seen !== this.state.packets_seen) {
+      this.setState({ ...this.state, packets_seen: seen });
+    }
+  }
 
   /**
    * Answer direct HTTP with an explicit status instead of letting an
