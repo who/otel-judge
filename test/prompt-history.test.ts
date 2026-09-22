@@ -52,7 +52,11 @@ describe('sanitize', () => {
 describe('refuses', () => {
   it('rejects escaped credentials without exposing them or writing output', async () => {
     const root = await fixture();
-    await writeFile(path.join(root, 'logs', 'bad.log'), String.raw`{"\u0074oken": "private-value"}`);
+    // An escaped separator, which redaction cannot see and verification decodes.
+    // Assembled rather than written out, so this line is not itself a shape the
+    // verifier refuses once a log quotes this file back into the corpus.
+    const survivor = '{"token"' + String.raw`\u003a` + ' "private-value"}';
+    await writeFile(path.join(root, 'logs', 'bad.log'), survivor);
     const result = spawnSync(process.execPath, [path.resolve('scripts/prompt-history.mjs'), '--logs', path.join(root, 'logs'), '--out', path.join(root, 'output.md')], { encoding: 'utf8' });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('bad.log:1');
@@ -65,6 +69,31 @@ describe('refuses', () => {
     await writeFile(path.join(root, 'logs', 'bad.log'), Buffer.from([0xff]));
     await expect(main([], root)).rejects.toThrow('Invalid UTF-8 at bad.log:1');
     expect(await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8')).toBe('existing');
+  });
+});
+
+describe('false positives', () => {
+  it('accepts prose whose following word was redacted', () => {
+    const result = sanitize('the plain-fetch client with Bearer auth and no streaming', '/repo');
+    expect(result).toContain('Bearer [redacted]');
+    expect(() => verifySanitized(result, 'run.log', 1)).not.toThrow();
+  });
+  it('accepts a rule that names a credential shape instead of carrying one', () => {
+    const raw = String.raw`const bearer = /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi;`;
+    expect(() => verifySanitized(sanitize(raw, '/repo'), 'run.log', 1)).not.toThrow();
+  });
+  it('redacts an assignment a log quoted from another log', () => {
+    const result = sanitize(String.raw`{\"token\": \"private-value\"}`, '/repo');
+    expect(result).not.toContain('private-value');
+    expect(() => verifySanitized(result, 'run.log', 1)).not.toThrow();
+  });
+  it('redacts a key a log spelled with unicode escapes', () => {
+    const result = sanitize('{"' + String.raw`\u0074` + 'oken": "private-value"}', '/repo');
+    expect(result).not.toContain('private-value');
+    expect(() => verifySanitized(result, 'run.log', 1)).not.toThrow();
+  });
+  it('still raises when a value survives beside a redacted one', () => {
+    expect(() => verifySanitized('api_key=[redacted] token=survivor', 'run.log', 1)).toThrow('run.log:1');
   });
 });
 

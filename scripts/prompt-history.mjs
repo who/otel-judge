@@ -13,8 +13,31 @@ import { pathToFileURL } from 'node:url';
  * verifier then refused documents that had in fact been fully redacted.
  */
 const gap = String.raw`[^\S\r\n]`;
-const key = String.raw`\b(?:[\w-]*(?:api[_-]?key|token|secret|authorization)[\w-]*)`;
-const assignment = new RegExp(`${key}["']?${gap}*[:=]${gap}*(?:"[^"\\r\\n]*"|'[^'\\r\\n]*'|(?:Bearer${gap}+)?[^\\s,;}&]+)`, 'gi');
+/**
+ * One character of a key, as itself or as the `\u00xx` escape a log wrote it as.
+ *
+ * A log that quotes a log escapes the escape, so the backslash run is counted
+ * loosely, and both letter cases are listed because the hex differs between
+ * them while the surrounding match is case-insensitive.
+ */
+const escapable = (word) => [...word].map((character) => {
+  const codes = [...new Set([character.toLowerCase(), character.toUpperCase()])]
+    .map((form) => form.charCodeAt(0).toString(16).padStart(4, '0'));
+  return `(?:${character}|\\\\+u(?:${codes.join('|')}))`;
+}).join('');
+const key = `(?:[\\w-]*(?:${escapable('api')}[_-]?${escapable('key')}|${escapable('token')}`
+  + `|${escapable('secret')}|${escapable('authorization')})[\\w-]*)`;
+/**
+ * A quote that may arrive escaped, because a log that quotes a log escapes it again.
+ *
+ * Redaction reads the literal bytes while verification decodes `\"` first, so an
+ * escaped `\"token\": \"value\"` was invisible to the rule and visible to the
+ * check: the generator refused documents it had never had a chance to clean.
+ * Matching the escaped form here closes that gap on the redaction side, which
+ * keeps the published bytes the ones the session actually produced.
+ */
+const quote = String.raw`\\*["']`;
+const assignment = new RegExp(`${key}(?:${quote})?${gap}*[:=]${gap}*(?:${quote}[^"'\\r\\n]*${quote}|(?:Bearer${gap}+)?[^\\s,;}&]+)`, 'gi');
 const bearer = new RegExp(`\\bBearer${gap}+[A-Za-z0-9._~+/-]+=*`, 'gi');
 const longValue = /[A-Za-z0-9_+/=-]{32,}/g;
 const hostname = /\b(?:[a-z0-9-]+\.)+workers\.dev\b/gi;
@@ -37,9 +60,15 @@ export function sanitize(text, repoRoot) {
 export function verifySanitized(text, file, line) {
   const decoded = text.replace(/\\u([0-9a-f]{4})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
     .replace(/\\(["\\/])/g, '$1');
-  const withoutMarkers = decoded.replace(/\[redacted(?:-host|-email)?\]/g, '');
+  // A marker stands in for what it replaced: deleting it joined the text on
+  // either side, so redacted prose read back as `Bearer  and` and a redacted
+  // value read as the word after it. `]` is excluded by every rule below, so it
+  // ends a run the way the removed value did without hiding a second secret.
+  const withoutMarkers = decoded.replace(/\[redacted(?:-host|-email)?\]/g, ']');
   const credential = new RegExp(`${key}["']?${gap}*[:=]${gap}*["']?[^\\s"',;}\\]]`, 'i');
-  if (credential.test(withoutMarkers) || new RegExp(`\\bBearer${gap}+[^\\s\\]}]`, 'i').test(withoutMarkers)
+  // Refuse the shape redaction claims to remove, character class included: a
+  // looser class made the rules' own prose and `const bearer = /…/` unsafe.
+  if (credential.test(withoutMarkers) || new RegExp(`\\bBearer${gap}+[A-Za-z0-9._~+/-]`, 'i').test(withoutMarkers)
       || [longValue, hostname, email].some((pattern) => new RegExp(pattern.source, 'i').test(withoutMarkers))) {
     throw new Error(`Unsafe content at ${file}:${line}`);
   }
