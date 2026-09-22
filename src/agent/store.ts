@@ -367,15 +367,22 @@ export function setPacketStatus(sql: SqlTag, packetId: string, status: PacketSta
  * about the same incident is information, and the timestamp is taken here
  * because a label happens when the button is pressed and carries no earlier
  * moment of its own.
+ *
+ * The written row is handed back rather than discarded, because the timestamp
+ * is invented in here and a caller that has to answer "what was stored" would
+ * otherwise have to read the whole record back to learn a value this function
+ * already had.
  */
 export function recordHumanLabel(
   sql: SqlTag,
   packetId: string,
   label: string,
   note: string | null = null,
-): void {
+): HumanLabel {
+  const createdAt = new Date().toISOString();
   sql`INSERT INTO human_labels (packet_id, label, note, created_at)
-    VALUES (${packetId}, ${label}, ${note}, ${new Date().toISOString()})`;
+    VALUES (${packetId}, ${label}, ${note}, ${createdAt})`;
+  return { label, note, created_at: createdAt };
 }
 
 /** The columns a summary is built from, before the status string is narrowed. */
@@ -421,6 +428,33 @@ export function listRecentPackets(sql: SqlTag, limit: number): PacketSummary[] {
     FROM packets
     ORDER BY received_at DESC, packet_id DESC
     LIMIT ${bounded}`.map(toSummary);
+}
+
+/**
+ * The severity each of these packets was judged at, for the ones that have one.
+ *
+ * A listing has to show a conclusion beside each row, and reading whole records
+ * to recover one column apiece would pull five tables and every stored payload
+ * through memory to render a list. Absent ids are simply missing from the map:
+ * a packet still being evaluated, or one whose run failed, has no severity, and
+ * a map with no entry says that without inventing a placeholder for it.
+ *
+ * The caller's list is already bounded by `listRecentPackets`, so this is at
+ * most `MAX_RECENT_PACKETS` primary-key lookups against local storage. They are
+ * issued one at a time because the tagged template binds a fixed number of
+ * values and cannot be handed a variable-length `IN` list.
+ */
+export function verdictSeverities(
+  sql: SqlTag,
+  packetIds: readonly string[],
+): Map<string, string> {
+  const severities = new Map<string, string>();
+  for (const packetId of packetIds) {
+    const row = sql<{ severity: string }>`
+      SELECT severity FROM verdicts WHERE packet_id = ${packetId}`[0];
+    if (row !== undefined) severities.set(packetId, row.severity);
+  }
+  return severities;
 }
 
 /** Parse a stored blob, answering null when it is no longer JSON. */

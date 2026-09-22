@@ -1,6 +1,15 @@
-import { Agent } from "agents";
+import { Agent, callable } from "agents";
 import type { Packet } from "../packet/types";
 import { acceptPacket, type AcceptOutcome } from "./accept";
+import {
+  clampHistoryLimit,
+  DEFAULT_HISTORY_LIMIT,
+  isHumanLabelName,
+  LabelRejectedError,
+  MAX_LABEL_NOTE_LENGTH,
+  type HistoryRow,
+  type PacketDetail,
+} from "./api-types";
 import { agentNameForPacket } from "./identity";
 import {
   persistEvaluation,
@@ -9,7 +18,17 @@ import {
   type EvaluationOutcome,
 } from "./persist";
 import { INITIAL_STATE, type JudgeState } from "./state";
-import { countPackets, ensureSchema, sqlTag } from "./store";
+import {
+  countPackets,
+  ensureSchema,
+  getPacketRecord,
+  hasPacket,
+  listRecentPackets,
+  recordHumanLabel,
+  sqlTag,
+  verdictSeverities,
+  type HumanLabel,
+} from "./store";
 
 /** The workflow binding evaluation runs on, named once so the two uses cannot drift. */
 const EVALUATE_WORKFLOW = "EVALUATE_WORKFLOW";
@@ -264,5 +283,107 @@ export class OtelJudgeAgent extends Agent<Env, JudgeState> {
     }
 
     this.setState({ ...this.state, ...terminalState(outcome) } as JudgeState);
+  }
+
+  /**
+   * The most recently received packets, newest first.
+   *
+   * This is the read a channel opens with, so it is the one that has to stay
+   * cheap: a row carries the identity of a packet and the judge's conclusion
+   * about it, never the payload, the distributions, or the prose. A caller that
+   * wants any of those names a packet and asks for it.
+   *
+   * Nothing in here touches live state. A history query from one client must be
+   * invisible to every other connected client, and the only way to promise that
+   * is for the read path to have no `setState` on it at all.
+   */
+  @callable({ description: "List recent packets, newest first, with their verdict severity" })
+  getHistory(limit: number = DEFAULT_HISTORY_LIMIT): HistoryRow[] {
+    const sql = sqlTag(this);
+    const summaries = listRecentPackets(sql, clampHistoryLimit(limit));
+    const severities = verdictSeverities(
+      sql,
+      summaries.map((summary) => summary.packet_id),
+    );
+
+    return summaries.map((summary) => ({
+      packet_id: summary.packet_id,
+      service: summary.service,
+      env: summary.env,
+      window_start: summary.window_start,
+      window_end: summary.window_end,
+      received_at: summary.received_at,
+      status: summary.status,
+      severity: severities.get(summary.packet_id) ?? null,
+    }));
+  }
+
+  /**
+   * Everything stored about one packet, or null when this judge has no such id.
+   *
+   * An unknown id is answered rather than thrown on: a history page follows a
+   * link to a packet that may have been judged by a different Agent or may
+   * never have existed, and a channel should render an empty state for that
+   * rather than an error dialog.
+   *
+   * The answers come back whole — full vector and noul mass per question — and
+   * a single answer whose stored JSON no longer parses arrives as a failure in
+   * the list instead of costing the caller the rest of the record.
+   */
+  @callable({ description: "Fetch one packet with its distributions, verdict, and labels" })
+  getPacket(packetId: string): PacketDetail | null {
+    const record = getPacketRecord(sqlTag(this), packetId);
+    if (record === null) return null;
+
+    return {
+      packet: record.packet,
+      jev_run: record.jev_run,
+      jev_answers: record.answers,
+      verdict: record.verdict,
+      labels: record.labels,
+    };
+  }
+
+  /**
+   * Attach a human's judgement to a packet, and hand back what was written.
+   *
+   * This is the single write path for a human opinion, whichever channel the
+   * human is using, which is why the vocabulary is checked here rather than at
+   * whatever door the click came through: a Slack app and a browser must not be
+   * able to disagree about what counts as a label.
+   *
+   * Labelling deliberately re-runs nothing and overwrites nothing. The verdict
+   * a model produced stays exactly as it was recorded, and the label sits
+   * beside it, so replayed history shows both what the judge said and what a
+   * human said back — which is the whole point of keeping `wrong` as a label.
+   */
+  @callable({ description: "Attach a human label to a packet without altering its verdict" })
+  labelPacket(packetId: string, label: string, note?: string | null): HumanLabel {
+    if (!isHumanLabelName(label)) {
+      throw new LabelRejectedError(
+        "unknown_label",
+        `${JSON.stringify(label)} is not a label; expected one of sev0, sev1, sev2, noise, wrong`,
+      );
+    }
+
+    // Rejected rather than truncated: a writer who loses the end of a sentence
+    // silently has no way to learn that the note it reads back is not the one
+    // it sent.
+    const text = note ?? null;
+    if (text !== null && text.length > MAX_LABEL_NOTE_LENGTH) {
+      throw new LabelRejectedError(
+        "note_too_long",
+        `note is ${text.length} characters; the limit is ${MAX_LABEL_NOTE_LENGTH}`,
+      );
+    }
+
+    // A label on an id this judge never stored would be a row no read can ever
+    // reach, since `getPacket` answers null for that id.
+    const sql = sqlTag(this);
+    if (!hasPacket(sql, packetId)) {
+      throw new LabelRejectedError("unknown_packet", `packet ${packetId} is not stored here`);
+    }
+
+    return recordHumanLabel(sql, packetId, label, text);
   }
 }
