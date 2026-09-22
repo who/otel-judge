@@ -201,6 +201,19 @@ describe('llm-compact', () => {
     await expect(readFile(path.join(root, 'PROMPT_HISTORY.md'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('allows compact prose that names the entry marker without dumping raw entries', async () => {
+    const root = await corpus();
+    await main(['--llm-compact', '--prefix', 'alpha'], root, {
+      backend: async () => JSON.stringify({
+        starters: [],
+        markdown: 'Changed grouping to bead ids. Discussed the <!-- entry metadata comment without dumping entries.',
+      }),
+    });
+    const output = await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8');
+    expect(output).toContain('Discussed the <!-- entry metadata');
+    expect(output).not.toMatch(/^<!--\s*entry\s/m);
+  });
+
   it('llm-compact-unsafe: verifies the compact output and keeps the previous file when it fails', async () => {
     const root = await corpus();
     await writeFile(path.join(root, 'PROMPT_HISTORY.md'), 'existing');

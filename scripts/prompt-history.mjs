@@ -191,7 +191,7 @@ export const COMPACT_INSTRUCTIONS = [
   'Each entry is one sanitized log line from an ortus grind run: orchestrator status lines, JSON events streamed by a coding agent (assistant text, tool calls, tool results), and the prompts the operator or orchestrator gave the agent.',
   'Answer with one JSON object and nothing else, without a code fence: {"starters":[...],"markdown":"..."}.',
   '- "starters": the full text of every prompt in these entries that starts a session: the standing instruction a worker receives at launch, such as a goal prompt, session rules, or an issue-authoring contract. Copy each verbatim, once. They are collected and listed once at the top of the document.',
-  '- "markdown": a compact, readable account of this part in GitHub Markdown: what was asked, what the agent decided, what it changed, what it verified, in order. Quote short prompt fragments where they carry the meaning. Where an entry is a session-start prompt, write the single line "Session-start prompt (listed once at the top)" instead of restating it. Leave out tool-result payloads, progress spinners, and repeated status lines. Use headings of level three or deeper only; the document supplies levels one and two. Never reproduce "<!-- entry" metadata comments.',
+  '- "markdown": a compact, readable account of this part in GitHub Markdown: what was asked, what the agent decided, what it changed, what it verified, in order. Quote short prompt fragments where they carry the meaning. Where an entry is a session-start prompt, write the single line "Session-start prompt (listed once at the top)" instead of restating it. Leave out tool-result payloads, progress spinners, and repeated status lines. Use headings of level three or deeper only; the document supplies levels one and two. Never emit raw HTML comment lines that dump entry metadata JSON; narrate in prose instead.',
   '- Keep markers such as [redacted], [redacted-host] and [redacted-email] exactly as they are; never guess what they replaced.',
   '- Do not invent facts. When the entries carry nothing meaningful, "markdown" may be one line saying so.',
 ].join('\n');
@@ -257,7 +257,12 @@ function parseCompactReply(reply) {
       || typeof parsed.markdown !== 'string' || !parsed.markdown.trim()) {
     throw new Error('Compact output rejected: reply does not carry starters and markdown');
   }
-  if (parsed.markdown.includes('<!-- entry')) throw new Error('Compact output rejected: reply reproduces raw entries');
+  // Refuse the raw dump shape (metadata comment + JSON payload), not prose that
+  // names the marker. Bead work on the generator itself legitimately discusses
+  // `<!-- entry` without reproducing the transcript format.
+  if (/<!--\s*entry\s*\{/.test(parsed.markdown) || /^<!--\s*entry\s/m.test(parsed.markdown)) {
+    throw new Error('Compact output rejected: reply reproduces raw entries');
+  }
   return {
     starters: parsed.starters,
     markdown: parsed.markdown.trim().replace(/^(#{1,2})(?=\s)/gm, '###'),
