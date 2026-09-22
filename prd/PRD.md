@@ -178,6 +178,7 @@ Before application submit:
 3. Commit `PROMPT_HISTORY.md` (+ optional `prompts/public/`).  
 4. Link sections to bead/PR ids.  
 5. Prefer per-milestone append + final ship pass.
+6. Publish the Ortus harness standing prompts, pinned to the version and backend that ran them, ahead of the bead sections.
 
 ## Beads decomposition (epics)
 

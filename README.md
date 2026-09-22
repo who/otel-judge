@@ -206,9 +206,9 @@ Re-run `npx wrangler types` after changing `wrangler.jsonc`.
 
 ## AI-assisted coding disclosure
 
-This repository was developed with AI coding agents. The prompts that drove each unit of work are the bead issue texts (description, design, acceptance), published as:
+This repository was developed with AI coding agents. The prompts that drove each unit of work are the standing Ortus harness prompts every agent was launched under, plus the bead issue texts (description, design, acceptance), published as:
 
-- [`PROMPT_HISTORY.md`](./PROMPT_HISTORY.md) — sanitized bead prompts, grouped by issue id
+- [`PROMPT_HISTORY.md`](./PROMPT_HISTORY.md) — the version-pinned harness prompts, then sanitized bead prompts grouped by issue id
 - [`docs/SHIP.md`](./docs/SHIP.md) — ship-gate checklist (regenerate, review, commit)
 
 Regenerate before submit:

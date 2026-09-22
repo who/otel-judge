@@ -2,7 +2,7 @@
 
 Runnable checklist for the Cloudflare application submission. Each step has an exact command. Do not treat prose-only steps as done.
 
-**Locked disclosure source:** bead issue text (the prompts that drove the work), via `--from-beads`. Grind transcripts are optional and are **not** the ship artifact.
+**Locked disclosure source:** the Ortus harness — the standing prompts every worker was launched under, version-pinned — followed by bead issue text (the prompts that drove the work), both via `--from-beads`. Grind transcripts are optional and are **not** the ship artifact.
 
 The optional `prompts/public/` directory from early PRD drafts is **declined**: one committed `PROMPT_HISTORY.md` is enough; a second tree would drift.
 
@@ -49,7 +49,9 @@ Dry-run (print only, no write):
 node scripts/prompt-history.mjs --from-beads --dry-run | less
 ```
 
-This writes sections keyed by bead id from sanitized title, description, design, and acceptance criteria. It does **not** read `logs/`.
+This opens the document with `## Ortus harness`: every standing prompt the installed Ortus resolves, quoted in full and pinned to the `ortus --version` and backend that ran them. Sections keyed by bead id follow, from sanitized title, description, design, and acceptance criteria. It does **not** read `logs/`.
+
+The harness is read live from the installed Ortus, so `ortus` must be on `PATH`. If it is not, or if it exposes no prompts, the run fails with `Ortus harness unavailable: ...` and writes nothing — a disclosure that quietly lost half of itself is worse than one that did not generate.
 
 ### Working modes
 
@@ -88,6 +90,7 @@ If sensitive material cannot be removed without destroying disclosure value, sto
 
 ```bash
 node scripts/prompt-history.mjs --from-beads --dry-run >/dev/null
+grep -q '^## Ortus harness' PROMPT_HISTORY.md
 test -f PROMPT_HISTORY.md && test -f docs/SHIP.md
 grep -q 'PROMPT_HISTORY.md' README.md
 grep -q 'SHIP.md' README.md

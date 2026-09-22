@@ -261,6 +261,25 @@ describe('digestEntryText', () => {
 
 
 describe('from-beads', () => {
+  // Ortus is not on PATH in CI, so the harness arrives as a fixture; the live
+  // read is exercised by the ship command on the machine that ships.
+  const harness = {
+    version: 'ortus 0.0.0-testfixture',
+    backend: 'claude',
+    prompts: [{
+      name: 'goal',
+      source: 'bundled (default)',
+      phase: 'implementation',
+      description: 'One-issue worker loop.',
+      text: '# Goal\n\nRead AGENTS.md first.\n\n```bash\nbd ready\n```\n',
+    }],
+  };
+  const loadHarness = async () => harness;
+  const oneBead = async () => [JSON.stringify({
+    id: 'otel-judge-demo1', title: 'Build the door', issue_type: 'task', description: 'Only a description.',
+  })];
+  afterEach(() => { vi.restoreAllMocks(); });
+
   it('writes sanitized bead prompts and skips grind logs', async () => {
     const root = await fixture();
     await writeFile(path.join(root, 'logs', 'noise.log'), '[2026-09-20 12:00:00] should not appear\n');
@@ -282,7 +301,7 @@ describe('from-beads', () => {
         description: 'Only a description.',
       }),
     ];
-    await main(['--from-beads'], root, { exportBeads });
+    await main(['--from-beads'], root, { exportBeads, loadHarness });
     const output = await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8');
     expect(output).toContain('Source: beads');
     expect(output).toContain('## otel-judge-demo1');
@@ -292,6 +311,40 @@ describe('from-beads', () => {
     expect(output).not.toContain('super-secret-value-here-32chars!!');
     expect(output).toContain('## otel-judge-demo2');
     expect(output).not.toContain('should not appear');
+  });
+
+  it('prepends the version-pinned harness ahead of the first bead section', async () => {
+    const root = await fixture();
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await main(['--from-beads', '--dry-run'], root, { exportBeads: oneBead, loadHarness });
+    const output = String(write.mock.calls[0][0]);
+    expect(output).toContain('## Ortus harness');
+    expect(output.indexOf('## Ortus harness')).toBeLessThan(output.indexOf('## otel-judge-demo1'));
+    expect(output).toContain('ortus 0.0.0-testfixture');
+    expect(output).toContain('### goal (implementation)');
+    expect(output).toContain('Read AGENTS.md first.');
+    // The prompt's own fenced example must not close the block holding it.
+    expect(output).toContain('````text');
+    expect(output).toContain('Only a description.');
+    await expect(readFile(path.join(root, 'PROMPT_HISTORY.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('redacts secret-shaped harness text and refuses what redaction cannot see', async () => {
+    const root = await fixture();
+    const withSecret = { ...harness, prompts: [{ ...harness.prompts[0],
+      text: 'Never print api_key=super-secret-value-here-32chars!! in a log.' }] };
+    await main(['--from-beads'], root, { exportBeads: oneBead, loadHarness: async () => withSecret });
+    const output = await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8');
+    expect(output).toContain('api_key=[redacted]');
+    expect(output).not.toContain('super-secret-value-here-32chars!!');
+
+    // An escaped separator is invisible to redaction and visible to verification,
+    // so the harness has to fail the document rather than publish the value.
+    const smuggled = { ...harness, prompts: [{ ...harness.prompts[0],
+      text: '{"token"' + String.raw`\u003a` + ' "private-value"}' }] };
+    await expect(main(['--from-beads'], root, { exportBeads: oneBead, loadHarness: async () => smuggled }))
+      .rejects.toThrow('Unsafe content at harness goal:1');
+    expect(await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8')).toContain('api_key=[redacted]');
   });
 
   it('refuses --from-beads with --llm-compact', async () => {

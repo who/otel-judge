@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { readdir, readFile, writeFile, rename, unlink } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -345,11 +346,128 @@ function defaultExportBeads(repoRoot) {
   });
 }
 
+/**
+ * The standing prompts the orchestrator hands a worker at launch, with the pin
+ * that says which copies of them ran.
+ *
+ * They are read out of the installed Ortus through its own CLI rather than
+ * kept as a snapshot in this repository: a snapshot is a second copy that
+ * drifts without anyone noticing, and a disclosure that names a version has to
+ * have read that version. A worker never sees a prompt file either, only the
+ * resolved text, so the resolved text is what ships.
+ */
+export async function collectHarness(repoRoot, { runOrtus = ortusOutput } = {}) {
+  const version = (await runOrtus(repoRoot, ['--version'])).trim();
+  const backend = await ortusBackend(repoRoot);
+  const prompts = [];
+  for (const line of (await runOrtus(repoRoot, ['prompt', 'list'])).split(/\r?\n/)) {
+    // Columns are separated by a run of spaces and the source column contains
+    // one of its own, so the split is on the run and the description keeps
+    // whatever follows the third column.
+    const [name, source, phase, ...rest] = line.trim().split(/\s{2,}/);
+    // A heading row or a wrapped description is not a prompt. A registered
+    // name is lower case, which separates the two without a format flag that
+    // this version of the CLI does not offer.
+    if (!rest.length || !/^[a-z][a-z0-9-]*$/.test(name)) continue;
+    const text = await runOrtus(repoRoot, ['prompt', 'show', name]);
+    prompts.push({ name, source, phase, description: rest.join(' '), text });
+  }
+  // Fail closed: a harness section that silently came back empty would publish
+  // a disclosure claiming the work had no standing prompts behind it.
+  if (!prompts.length) throw new Error('Ortus harness unavailable: ortus prompt list named no prompts');
+  return { version, backend, prompts };
+}
+
+/** One `ortus` call, stdout captured. The harness is a ship input, so a failure stops the run. */
+function ortusOutput(repoRoot, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('ortus', args, { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', err = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    child.on('error', (error) => reject(new Error(`Ortus harness unavailable: ortus ${args[0]} (${error.code ?? error.message})`)));
+    child.on('close', (code) => {
+      if (code === 0) return resolve(out);
+      // `ortus prompt show` prints a provenance header to stderr on success
+      // too, so only the first line is quoted; on a failure that is the
+      // diagnostic, and the rest is a banner nobody needs in an error.
+      const diagnostic = err.trim().split('\n')[0] || 'no diagnostic';
+      reject(new Error(`Ortus harness unavailable: ortus ${args.join(' ')} exited ${code}: ${diagnostic}`));
+    });
+  });
+}
+
+/**
+ * Which backend ran the harness, read from the config that chose it.
+ *
+ * The per-project file overrides the user's, which is the order Ortus resolves
+ * them in. A setup that pins no backend is reported as pinning none rather
+ * than as pinning the current default, because the default can move and a pin
+ * that was never written is not evidence of anything.
+ */
+async function ortusBackend(repoRoot) {
+  for (const file of [path.join(repoRoot, '.ortusrc'), path.join(homedir(), '.ortusrc')]) {
+    let text;
+    try { text = await readFile(file, 'utf8'); }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    const match = text.match(new RegExp(`^${gap}*backend${gap}*=${gap}*["']([^"'\\r\\n]+)["']`, 'm'));
+    if (match) return match[1];
+  }
+  return 'unrecorded';
+}
+
+/**
+ * A fence longer than any backtick run in the text it will hold.
+ *
+ * A standing prompt carries fenced command examples of its own, and a
+ * three-backtick fence would end at the first of them and spill the remainder
+ * of the prompt into the document as markup.
+ */
+function fenceFor(text) {
+  return '`'.repeat(Math.max(3, ...[...text.matchAll(/`+/g)].map((run) => run[0].length + 1)));
+}
+
+/**
+ * The harness section: what every session was asked before it was asked
+ * anything specific.
+ *
+ * Each prompt is fenced rather than quoted because a blockquote still renders
+ * the headings and HTML comments a prompt contains, which would fold the
+ * prompts' own structure into the document's outline and hide the commented
+ * parts of a disclosure that exists to be read.
+ */
+export function renderHarness(harness, repoRoot) {
+  const version = sanitize(String(harness.version || ''), repoRoot);
+  const backend = sanitize(String(harness.backend || ''), repoRoot);
+  let output = `\n## Ortus harness\n\n`;
+  output += `Every bead below was worked by an agent launched under one of these standing prompts, `
+    + `reproduced in full as \`${version}\` resolved them for the \`${backend}\` backend. `
+    + `The beads say what was asked; the harness says how it was asked.\n`;
+  for (const prompt of harness.prompts) {
+    const name = sanitize(String(prompt.name || ''), repoRoot);
+    const text = sanitize(String(prompt.text || ''), repoRoot).replace(/\n+$/, '');
+    for (const [i, line] of text.split('\n').entries()) verifySanitized(line, `harness ${name}`, i + 1);
+    const phase = sanitize(String(prompt.phase || ''), repoRoot);
+    const source = sanitize(String(prompt.source || ''), repoRoot);
+    const meta = [sanitize(String(prompt.description || ''), repoRoot), source && `Resolved from ${source}.`]
+      .filter(Boolean).join(' ');
+    const fence = fenceFor(text);
+    output += `\n### ${name}${phase ? ` (${phase})` : ''}\n\n`;
+    if (meta) output += `${meta}\n\n`;
+    output += `${fence}text\n${text}\n${fence}\n`;
+  }
+  return output;
+}
+
 /** Render sanitized bead prompts as the public prompt history. */
-export function renderBeadPrompts(issues, repoRoot, now = new Date()) {
+export function renderBeadPrompts(issues, repoRoot, harness = null, now = new Date()) {
   let output = `# Prompt history\n\nGenerated: ${now.toISOString()}\n`;
   output += `\nSource: beads — the issue text that prompted each unit of work `
-    + `(title, description, design, acceptance). Not a grind transcript.\n`;
+    + `(title, description, design, acceptance). Not a grind transcript.`
+    + `${harness ? ` The standing prompts each of those issues was worked under are reproduced first.` : ''}\n`;
+  if (harness) output += renderHarness(harness, repoRoot);
   if (!issues.length) return `${output}\nNo bead issues found.\n`;
   for (const issue of issues) {
     const id = sanitize(String(issue.id), repoRoot);
@@ -478,7 +596,7 @@ export async function main(args = process.argv.slice(2), repoRoot = process.cwd(
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--help') {
-      console.log('Usage: node scripts/prompt-history.mjs [--from-beads] [--logs <dir>] [--out <path>] [--prefix <prefix>] [--append] [--dry-run] [--llm-compact]\nDefaults: --logs logs/ --out PROMPT_HISTORY.md --prefix <repository directory name>\n--from-beads writes PROMPT_HISTORY from sanitized bead issue text (title/description/design/acceptance); this is the ship disclosure path\n--llm-compact rewrites grind logs via Claude (optional; not the ship path); cannot combine with --append or --from-beads');
+      console.log('Usage: node scripts/prompt-history.mjs [--from-beads] [--logs <dir>] [--out <path>] [--prefix <prefix>] [--append] [--dry-run] [--llm-compact]\nDefaults: --logs logs/ --out PROMPT_HISTORY.md --prefix <repository directory name>\n--from-beads writes PROMPT_HISTORY from the version-pinned Ortus harness prompts followed by sanitized bead issue text (title/description/design/acceptance); this is the ship disclosure path\n--llm-compact rewrites grind logs via Claude (optional; not the ship path); cannot combine with --append or --from-beads');
       return;
     }
     if (arg === '--append') append = true;
@@ -500,8 +618,12 @@ export async function main(args = process.argv.slice(2), repoRoot = process.cwd(
   if (fromBeads && append) throw new Error('Cannot combine --from-beads with --append');
   const destination = path.resolve(repoRoot, out);
   if (fromBeads) {
+    // The harness first: an Ortus install that cannot be read is a ship-path
+    // failure, and learning that before `bd export` runs keeps the two halves
+    // of the disclosure from arriving one at a time.
+    const harness = await (options.loadHarness ?? collectHarness)(repoRoot);
     const issues = await collectBeadPrompts(repoRoot, options);
-    const document = renderBeadPrompts(issues, repoRoot);
+    const document = renderBeadPrompts(issues, repoRoot, harness);
     document.split('\n').forEach((line, index) => verifySanitized(line, 'bead prompt history', index + 1));
     if (dryRun) { process.stdout.write(document); return; }
     const temporary = `${destination}.${process.pid}.tmp`;
@@ -539,7 +661,7 @@ export async function main(args = process.argv.slice(2), repoRoot = process.cwd(
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   main().catch((error) => {
     // Library errors can contain raw input, so expose only our controlled diagnostics.
-    const safe = /^(Unsafe content at |Invalid UTF-8 at |Missing value for |Unknown argument|Unrecognized append document|Invalid append entry|Append document differs|Cannot combine |Compact backend failed|Compact output rejected)/;
+    const safe = /^(Unsafe content at |Invalid UTF-8 at |Missing value for |Unknown argument|Unrecognized append document|Invalid append entry|Append document differs|Cannot combine |Compact backend failed|Compact output rejected|Ortus harness unavailable)/;
     console.error(safe.test(error.message) ? error.message : 'Prompt history generation failed');
     process.exitCode = 1;
   });
