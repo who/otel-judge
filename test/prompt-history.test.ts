@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { sanitize, verifySanitized, groupByBead, renderMarkdown, main, collectLogEntries, COMPACT_INSTRUCTIONS, digestEntryText} from '../scripts/prompt-history.mjs';
+import { sanitize, verifySanitized, groupByBead, renderMarkdown, main, collectLogEntries, COMPACT_INSTRUCTIONS, digestEntryText, collectBeadPrompts, renderBeadPrompts} from '../scripts/prompt-history.mjs';
 
 const roots: string[] = [];
 async function fixture() {
@@ -256,5 +256,47 @@ describe('digestEntryText', () => {
 
   it('passes status lines through', () => {
     expect(digestEntryText('[2026-09-21 12:00:00] worker claimed otel-judge-4i3.1')).toContain('worker claimed');
+  });
+});
+
+
+describe('from-beads', () => {
+  it('writes sanitized bead prompts and skips grind logs', async () => {
+    const root = await fixture();
+    await writeFile(path.join(root, 'logs', 'noise.log'), '[2026-09-20 12:00:00] should not appear\n');
+    const exportBeads = async () => [
+      JSON.stringify({
+        id: 'otel-judge-demo1',
+        title: 'Build the door',
+        issue_type: 'task',
+        status: 'closed',
+        description: '## Objective\n\nShip the Worker door with Bearer secret.',
+        design: '## Scope\n\nUse api_key=super-secret-value-here-32chars!! in tests only — will redact.',
+        acceptance_criteria: '## Observable criteria\n\n- AC-1: door responds',
+      }),
+      JSON.stringify({
+        id: 'otel-judge-demo2',
+        title: 'Empty optional fields',
+        issue_type: 'task',
+        status: 'open',
+        description: 'Only a description.',
+      }),
+    ];
+    await main(['--from-beads'], root, { exportBeads });
+    const output = await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8');
+    expect(output).toContain('Source: beads');
+    expect(output).toContain('## otel-judge-demo1');
+    expect(output).toContain('Build the door');
+    expect(output).toContain('Ship the Worker door');
+    expect(output).toContain('[redacted]');
+    expect(output).not.toContain('super-secret-value-here-32chars!!');
+    expect(output).toContain('## otel-judge-demo2');
+    expect(output).not.toContain('should not appear');
+  });
+
+  it('refuses --from-beads with --llm-compact', async () => {
+    const root = await fixture();
+    await expect(main(['--from-beads', '--llm-compact'], root, { exportBeads: async () => [] }))
+      .rejects.toThrow('Cannot combine --from-beads with --llm-compact');
   });
 });

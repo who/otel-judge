@@ -302,9 +302,79 @@ export function digestEntryText(text) {
   return `[${type || 'event'} omitted]`;
 }
 
+
 export function digestEntries(entries) {
   return entries.map((entry) => ({ ...entry, text: digestEntryText(entry.text) }));
 }
+
+/**
+ * Load bead issues that prompted the work (the real user/operator prompts).
+ *
+ * Ship disclosure cares about the issue text that drove each grind — title,
+ * description, design, acceptance — not the Claude transcript. `bd export`
+ * is the authoritative store; epics are included as context, infrastructure
+ * beads are left out by the export default.
+ */
+export async function collectBeadPrompts(repoRoot, { exportBeads } = {}) {
+  const run = exportBeads ?? defaultExportBeads;
+  const lines = await run(repoRoot);
+  const issues = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let issue;
+    try { issue = JSON.parse(line); } catch { continue; }
+    if (!issue?.id || !issue?.title) continue;
+    issues.push(issue);
+  }
+  return issues.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+}
+
+function defaultExportBeads(repoRoot) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('bd', ['export'], { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '', err = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.stderr.on('data', (chunk) => { err += chunk; });
+    child.on('error', (error) => reject(new Error(`bd export failed: ${error.code ?? error.message}`)));
+    child.on('close', (code) => {
+      if (code === 0) resolve(out.split(/\r?\n/));
+      else reject(new Error(`bd export failed: exit ${code}${err ? `: ${err.trim()}` : ''}`));
+    });
+  });
+}
+
+/** Render sanitized bead prompts as the public prompt history. */
+export function renderBeadPrompts(issues, repoRoot, now = new Date()) {
+  let output = `# Prompt history\n\nGenerated: ${now.toISOString()}\n`;
+  output += `\nSource: beads — the issue text that prompted each unit of work `
+    + `(title, description, design, acceptance). Not a grind transcript.\n`;
+  if (!issues.length) return `${output}\nNo bead issues found.\n`;
+  for (const issue of issues) {
+    const id = sanitize(String(issue.id), repoRoot);
+    const title = sanitize(String(issue.title || ''), repoRoot);
+    const typ = sanitize(String(issue.issue_type || issue.type || 'task'), repoRoot);
+    const status = sanitize(String(issue.status || ''), repoRoot);
+    output += `\n## ${id}\n\n`;
+    output += `**${title}** (${typ}${status ? `, ${status}` : ''})\n`;
+    for (const [label, key] of [
+      ['Description', 'description'],
+      ['Design', 'design'],
+      ['Acceptance criteria', 'acceptance_criteria'],
+    ]) {
+      const raw = issue[key];
+      if (!raw || !String(raw).trim()) continue;
+      const body = sanitize(String(raw), repoRoot);
+      for (const [i, line] of body.split('\n').entries()) verifySanitized(line, `${id} ${key}`, i + 1);
+      output += `\n### ${label}\n\n`;
+      output += body.split('\n').map((line) => `> ${line}`).join('\n') + '\n';
+    }
+  }
+  return output;
+}
+
+
 
 function parseCompactReply(reply) {
   const body = reply.trim().replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
@@ -403,17 +473,18 @@ function parseExisting(text, prefix) {
 export async function main(args = process.argv.slice(2), repoRoot = process.cwd(), options = {}) {
   // bd derives its own prefix from the repository directory name, so the default
   // agrees with the ids the logs actually carry without being told.
-  let logs = 'logs', out = 'PROMPT_HISTORY.md', append = false, dryRun = false, llmCompact = false;
+  let logs = 'logs', out = 'PROMPT_HISTORY.md', append = false, dryRun = false, llmCompact = false, fromBeads = false;
   let prefix = path.basename(path.resolve(repoRoot));
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--help') {
-      console.log('Usage: node scripts/prompt-history.mjs [--logs <dir>] [--out <path>] [--prefix <prefix>] [--append] [--dry-run] [--llm-compact]\nDefaults: --logs logs/ --out PROMPT_HISTORY.md --prefix <repository directory name>\n--llm-compact rewrites the sanitized history into compact Markdown through the Claude CLI, listing session-start prompts once at the top; ship runs use it, and it cannot be combined with --append');
+      console.log('Usage: node scripts/prompt-history.mjs [--from-beads] [--logs <dir>] [--out <path>] [--prefix <prefix>] [--append] [--dry-run] [--llm-compact]\nDefaults: --logs logs/ --out PROMPT_HISTORY.md --prefix <repository directory name>\n--from-beads writes PROMPT_HISTORY from sanitized bead issue text (title/description/design/acceptance); this is the ship disclosure path\n--llm-compact rewrites grind logs via Claude (optional; not the ship path); cannot combine with --append or --from-beads');
       return;
     }
     if (arg === '--append') append = true;
     else if (arg === '--dry-run') dryRun = true;
     else if (arg === '--llm-compact') llmCompact = true;
+    else if (arg === '--from-beads') fromBeads = true;
     else if (arg === '--logs' || arg === '--out' || arg === '--prefix') {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`Missing value for ${arg}`);
@@ -425,7 +496,21 @@ export async function main(args = process.argv.slice(2), repoRoot = process.cwd(
   // A compact document carries no entry metadata, so there is nothing for a
   // later append to read back; the combination is refused rather than defined.
   if (append && llmCompact) throw new Error('Cannot combine --append with --llm-compact');
+  if (fromBeads && llmCompact) throw new Error('Cannot combine --from-beads with --llm-compact');
+  if (fromBeads && append) throw new Error('Cannot combine --from-beads with --append');
   const destination = path.resolve(repoRoot, out);
+  if (fromBeads) {
+    const issues = await collectBeadPrompts(repoRoot, options);
+    const document = renderBeadPrompts(issues, repoRoot);
+    document.split('\n').forEach((line, index) => verifySanitized(line, 'bead prompt history', index + 1));
+    if (dryRun) { process.stdout.write(document); return; }
+    const temporary = `${destination}.${process.pid}.tmp`;
+    try {
+      await writeFile(temporary, document, { flag: 'wx', mode: 0o600 });
+      await rename(temporary, destination);
+    } finally { await unlink(temporary).catch((error) => { if (error.code !== 'ENOENT') throw error; }); }
+    return;
+  }
   const entries = [];
   if (append) {
     try { entries.push(...parseExisting(await readFile(destination, 'utf8'), prefix)); }
