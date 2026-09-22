@@ -1,4 +1,5 @@
 import { routeAgentRequest } from "agents";
+import { handleIngest, INGEST_PATH } from "../ingress/ingest";
 import { corsHeaders, handlePreflight } from "./cors";
 import { jsonError } from "./errors";
 import { enforceBodyLimit } from "./limits";
@@ -30,7 +31,7 @@ function health(env: Env): Response {
 }
 
 /**
- * The Worker door: CORS, limits, health, then the Agents SDK router.
+ * The Worker door: CORS, health, signed ingress, limits, then the SDK router.
  *
  * Everything unclaimed here is offered to `routeAgentRequest`, which owns
  * identity routing for `/agents/:binding/:name`; deriving Durable Object ids
@@ -49,6 +50,13 @@ export async function handleRequest(
   const url = new URL(request.url);
   if (url.pathname === "/health" && (request.method === "GET" || request.method === "HEAD")) {
     return withHeaders(health(env), cors);
+  }
+
+  // Claimed before the shared limit runs, because ingress buffers the body
+  // itself: it needs the exact bytes the producer signed, and the generic path
+  // below rebuilds the request around a decoded copy for the SDK router.
+  if (url.pathname === INGEST_PATH && request.method === "POST") {
+    return withHeaders(await handleIngest(request, env), cors);
   }
 
   // A WebSocket upgrade carries no body to buffer and must reach the Agent
