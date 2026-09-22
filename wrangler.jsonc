@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "otel-judge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "ai": { "binding": "AI" },
+  "durable_objects": {
+    "bindings": [{ "name": "OTEL_JUDGE_AGENT", "class_name": "OtelJudgeAgent" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OtelJudgeAgent"] }],
+  "workflows": [{
+    "binding": "EVALUATE_WORKFLOW",
+    "name": "evaluate-workflow",
+    "class_name": "EvaluateWorkflow"
+  }],
+  "vars": {
+    "LLAMA_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "JEV_MODEL": "jev-latest"
+  }
+}

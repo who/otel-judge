@@ -5,3 +5,10 @@
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# Wrangler local state and generated bindings
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+worker-configuration.d.ts
