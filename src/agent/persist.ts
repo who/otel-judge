@@ -1,6 +1,5 @@
 import { jevStateStatus, toJevRunRow } from "../jev/degraded";
 import type { EvaluateResult } from "../workflow/evaluate";
-import type { JudgeState } from "./state";
 import {
   getPacketStatus,
   hasPacket,
@@ -16,16 +15,9 @@ import {
  * What an Agent does with a workflow that has stopped, and nothing else.
  *
  * Two jobs live here so the Agent can keep its promise of depending on nothing
- * but the SDK and its own folder: turning an evaluation into rows, and turning
- * it into the one terminal snapshot clients are shown. Both need to know what an
- * `EvaluateResult` looks like, and putting that knowledge in one module means
- * the Agent never imports the pipeline to find out.
- *
- * The whole write is one pass at the end of a run rather than a write per step.
- * A step that retries half an hour later would otherwise leave history holding
- * half of one attempt and half of another, and no reader could tell which half
- * was current. The per-step writes are the live merges, which are disposable by
- * design and can be replayed without consequence.
+ * but the SDK and its own folder: turning an evaluation into rows. Live board
+ * snapshots are assembled in the Agent from BoardState helpers — this module
+ * only persists durable history.
  */
 
 /**
@@ -146,60 +138,6 @@ export function persistEvaluation(
 }
 
 /**
- * The last snapshot a run produces, small enough to broadcast to strangers.
- *
- * The demo origin is public and every connected socket sees this, so what
- * crosses is a severity and a one-line summary — never a distribution, never a
- * prompt, never the critique. A client that wants the reasoning asks for the
- * packet's history, which is a deliberate request rather than a broadcast.
- *
- * A failed run publishes no verdict at all, not an empty one: `last_verdict` is
- * left exactly as it was so the board keeps showing the last thing actually
- * judged instead of blanking on a run that never reached an opinion.
- */
-export function terminalState(
-  outcome: EvaluationOutcome,
-  now: Date = new Date(),
-): Record<string, unknown> {
-  const updatedAt = now.toISOString();
-
-  if (!outcome.ok) {
-    return {
-      stage: "failed",
-      last_packet_id: outcome.packet_id,
-      updated_at: updatedAt,
-    } satisfies Partial<JudgeState>;
-  }
-
-  const { result } = outcome;
-  const judged = result.verdict;
-
-  // A run that never reached System Two publishes the failed stage and leaves
-  // `last_verdict` alone, for the same reason a failed run does: the board goes
-  // on showing the last packet actually judged rather than blanking on one that
-  // nobody graded.
-  if (judged === undefined) {
-    return {
-      stage: "failed",
-      last_packet_id: result.packet_id,
-      jev_status: jevStateStatus(result.jev),
-      updated_at: updatedAt,
-    } satisfies Partial<JudgeState>;
-  }
-
-  return {
-    stage: "complete",
-    last_packet_id: result.packet_id,
-    last_verdict: {
-      severity: judged.verdict.severity,
-      summary: judged.verdict.summary,
-    },
-    jev_status: jevStateStatus(result.jev),
-    updated_at: updatedAt,
-  } satisfies Partial<JudgeState>;
-}
-
-/**
  * Read a workflow's output back as an evaluation, or refuse to.
  *
  * The completion callback types its result `unknown` because a workflow can
@@ -227,3 +165,6 @@ export function readEvaluateResult(value: unknown): EvaluateResult | null {
 
   return candidate as EvaluateResult;
 }
+
+/** Re-export so callers that only imported persist for status helpers stay quiet. */
+export { jevStateStatus };

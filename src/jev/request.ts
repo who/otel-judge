@@ -1,4 +1,4 @@
-import { QUESTIONS, type SystemOneQuestion } from "./questions";
+import { QUESTIONS } from "./questions";
 
 /**
  * Build the one request body System One is asked per packet.
@@ -87,10 +87,35 @@ export class SystemOneRequestError extends Error {
  * distributions to store and hand to System Two, and a field left out is one
  * fewer thing a future default can flip on.
  */
+/** One choice option name mapped to an optional rubric description. */
+export type ChoiceCriteria = Readonly<Record<string, string | null>>;
+
+/**
+ * Wire shape for one System One question (TypeSafe `/v1/systemone`).
+ *
+ * Discriminated on `type`. Choice questions carry `criteria` as a dictionary of
+ * option ? description (not a `choices` array). The field name is `instructions`,
+ * not `text`.
+ */
+export type SystemOneWireQuestion =
+  | {
+      readonly type: "choice";
+      readonly instructions: string;
+      readonly criteria: ChoiceCriteria;
+    }
+  | {
+      readonly type: "noul";
+      readonly instructions: string;
+      readonly criteria?: { readonly yes?: string | null; readonly no?: string | null };
+    };
+
 export interface SystemOneRequestBody {
   model: string;
   state: SystemOneState;
-  questions: readonly SystemOneQuestion[];
+  /**
+   * Dictionary keyed by question id. An array produces HTTP 422 `dict_type`.
+   */
+  questions: Readonly<Record<string, SystemOneWireQuestion>>;
 }
 
 /**
@@ -123,14 +148,33 @@ export function buildSystemOneRequest(state: SystemOneState, env: JevEnv): Syste
 
   // Checked against the interface rather than the frozen literals so the guard
   // still means something the day a question is added with its choices missed.
-  const questions: readonly SystemOneQuestion[] = QUESTIONS;
-  for (const question of questions) {
-    if (question.type === "choice" && (question.choices?.length ?? 0) === 0) {
-      throw new SystemOneRequestError(
-        "question_without_choices",
-        `question ${question.key} is a choice with nothing to choose from`,
-      );
+  const questions: Record<string, SystemOneWireQuestion> = {};
+  for (const question of QUESTIONS) {
+    if (question.type === "choice") {
+      const choices = question.choices ?? [];
+      if (choices.length === 0) {
+        throw new SystemOneRequestError(
+          "question_without_choices",
+          `question ${question.key} is a choice with nothing to choose from`,
+        );
+      }
+      const criteria: Record<string, string | null> = {};
+      for (const name of choices) {
+        // Descriptions are optional on the wire; null keeps the option named.
+        criteria[name] = null;
+      }
+      questions[question.key] = {
+        type: "choice",
+        instructions: question.text,
+        criteria,
+      };
+      continue;
     }
+
+    questions[question.key] = {
+      type: "noul",
+      instructions: question.text,
+    };
   }
 
   return { model: jevModel(env), state, questions };

@@ -122,7 +122,28 @@ export async function callSystemOne(env: JevClientEnv, state: SystemOneState): P
     // 429 and 5xx are the API asking for time; every other 4xx is the API
     // saying this request will never be accepted as sent.
     const retryable = response.status === 429 || response.status >= 500;
-    return failure(retryable, `System One answered ${response.status}`, response.status);
+    let detail = "";
+    try {
+      detail = (await response.text()).slice(0, 800);
+    } catch {
+      detail = "(response body unreadable)";
+    }
+    // Debug aid for local triangle: status + truncated body, never the key.
+    // Request shape only ? model name, question keys, state keys ? no secrets.
+    console.error("[jev] System One rejected request", {
+      status: response.status,
+      retryable,
+      url: SYSTEM_ONE_URL,
+      model: body.model,
+      questionKeys: Object.keys(body.questions),
+      stateKeys: Object.keys(body.state),
+      responseBody: detail,
+    });
+    const reason =
+      detail === ""
+        ? `System One answered ${response.status}`
+        : `System One answered ${response.status}: ${detail.slice(0, 200)}`;
+    return failure(retryable, reason, response.status);
   }
 
   let text: string;
@@ -147,6 +168,11 @@ export async function callSystemOne(env: JevClientEnv, state: SystemOneState): P
   if (!parsed.ok) {
     // A schema mismatch is not a bad minute, so it is not retryable: the same
     // request would produce the same unusable body.
+    console.error("[jev] System One 2xx body failed parse", {
+      status: response.status,
+      reason: parsed.reason,
+      bodyPreview: text.slice(0, 800),
+    });
     return failure(false, `malformed response: ${parsed.reason}`, response.status);
   }
 

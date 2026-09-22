@@ -30,6 +30,7 @@ const GUARDED_MODULES = [
   "src/agent/OtelJudgeAgent.ts",
   "src/agent/accept.ts",
   "src/agent/api-types.ts",
+  "src/agent/boardState.ts",
   "src/agent/identity.ts",
   "src/agent/persist.ts",
   "src/agent/state.ts",

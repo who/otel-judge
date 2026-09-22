@@ -1,5 +1,7 @@
 import type { WorkflowStepConfig } from "cloudflare:workers";
-import type { JudgeState, Stage } from "../agent/state";
+import type { JevDistribution } from "../agent/boardState";
+import { jevDistributionFromResult } from "../agent/boardState";
+import type { Stage } from "../agent/state";
 import { jevStateStatus } from "../jev/degraded";
 import type { SystemOneState } from "../jev/request";
 import type { JevFailure, JevResult } from "../jev/types";
@@ -102,6 +104,8 @@ export interface EvaluateMilestone {
   step: EvaluateStepName;
   stage: Stage;
   jev_status?: "ok" | "unavailable";
+  /** Severity distribution for the board chip when System One answered. */
+  jev_distribution?: JevDistribution;
 }
 
 /**
@@ -114,18 +118,23 @@ export interface EvaluateMilestone {
  * the summary, the distributions, or the prompts is in here, and there is no
  * branch that could put one in: state is broadcast to every connected client.
  */
+/**
+ * @deprecated Board progress goes through `OtelJudgeAgent.applyBoardMilestone`.
+ * Kept as a no-op-shaped helper for tests that still assert milestone fields.
+ */
 export function milestoneState(
   milestone: EvaluateMilestone,
   now: Date = new Date(),
 ): Record<string, unknown> {
-  // Every merge refreshes `updated_at` so a client can tell a stage that was
-  // reasserted from one that has been sitting still.
   return {
+    packet_id: milestone.packet_id,
     stage: milestone.stage,
-    last_packet_id: milestone.packet_id,
-    updated_at: now.toISOString(),
+    updatedAt: now.toISOString(),
     ...(milestone.jev_status === undefined ? {} : { jev_status: milestone.jev_status }),
-  } satisfies Partial<JudgeState>;
+    ...(milestone.jev_distribution === undefined
+      ? {}
+      : { jev_distribution: milestone.jev_distribution }),
+  };
 }
 
 /**
@@ -266,6 +275,7 @@ export async function runEvaluate(
     step: "jev",
     stage: STEP_STAGES.jev,
     jev_status: jevStateStatus(jev),
+    jev_distribution: jevDistributionFromResult(jev),
   });
 
   // System Two is not asked without System One's answers. A verdict reached from

@@ -87,9 +87,85 @@ function isProbability(value: unknown): value is number {
 function readAnswer(key: string, entry: unknown): { ok: true; answer: JevAnswer } | { ok: false; reason: string } {
   if (!isRecord(entry)) return { ok: false, reason: `answer for ${key} is not an object` };
 
+  // Live System One (TypeSafe /v1/systemone) returns typed answers:
+  //   choice ? { type: "choice", choice, probabilities: { option: p } }
+  //   noul   ? { type: "noul", noul: p }
+  // Older fixture bodies used { distribution, noul }. Accept both so tests and
+  // production share one parser.
+  const typed = entry.type;
+  if (typed === "choice") {
+    const raw = entry.probabilities;
+    if (!isRecord(raw)) return { ok: false, reason: `answer for ${key} carries no probabilities` };
+    const built = distributionFromMap(key, raw);
+    if (!built.ok) return built;
+    const noul = 0;
+    const total = built.mass + noul;
+    if (Math.abs(total - 1) > MASS_TOLERANCE) {
+      return { ok: false, reason: `mass for ${key} sums to ${total}, not 1` };
+    }
+    const named = typeof entry.choice === "string" ? entry.choice : null;
+    const argmax =
+      named !== null && named in built.distribution
+        ? { outcome: named, p: built.distribution[named]! }
+        : built.argmax;
+    return {
+      ok: true,
+      answer: {
+        key: key as JevAnswer["key"],
+        distribution: built.distribution as JevDistribution,
+        noul,
+        argmax,
+      },
+    };
+  }
+
+  if (typed === "noul") {
+    const noul = entry.noul;
+    if (!isProbability(noul) || noul > 1) {
+      return { ok: false, reason: `noul for ${key} is not a probability` };
+    }
+    // Board chips and SQL expect a distribution beside noul. Represent the
+    // calibrated yes mass as yes/no so downstream stays on one shape.
+    const distribution = { yes: noul, no: 1 - noul } as JevDistribution;
+    const argmax: JevArgmax =
+      noul >= 0.5 ? { outcome: "yes", p: noul } : { outcome: "no", p: 1 - noul };
+    return {
+      ok: true,
+      answer: { key: key as JevAnswer["key"], distribution, noul, argmax },
+    };
+  }
+
   const raw = entry.distribution;
   if (!isRecord(raw)) return { ok: false, reason: `answer for ${key} carries no distribution` };
 
+  const built = distributionFromMap(key, raw);
+  if (!built.ok) return built;
+
+  const noul = entry.noul === undefined ? 0 : entry.noul;
+  if (!isProbability(noul)) return { ok: false, reason: `noul for ${key} is not a probability` };
+
+  const total = built.mass + noul;
+  if (Math.abs(total - 1) > MASS_TOLERANCE) {
+    return { ok: false, reason: `mass for ${key} sums to ${total}, not 1` };
+  }
+
+  return {
+    ok: true,
+    answer: {
+      key: key as JevAnswer["key"],
+      distribution: built.distribution as JevDistribution,
+      noul,
+      argmax: built.argmax,
+    },
+  };
+}
+
+function distributionFromMap(
+  key: string,
+  raw: Record<string, unknown>,
+):
+  | { ok: true; distribution: Record<string, number>; mass: number; argmax: JevArgmax }
+  | { ok: false; reason: string } {
   const outcomes = Object.entries(raw);
   if (outcomes.length === 0) return { ok: false, reason: `distribution for ${key} is empty` };
 
@@ -102,28 +178,9 @@ function readAnswer(key: string, entry: unknown): { ok: true; answer: JevAnswer 
     }
     distribution[outcome] = probability;
     mass += probability;
-    // Strictly greater, so a tie keeps the first outcome the model listed and
-    // two reads of the same body can never disagree about which one won.
     if (argmax === null || probability > argmax.p) argmax = { outcome, p: probability };
   }
-
-  const noul = entry.noul === undefined ? 0 : entry.noul;
-  if (!isProbability(noul)) return { ok: false, reason: `noul for ${key} is not a probability` };
-
-  const total = mass + noul;
-  if (Math.abs(total - 1) > MASS_TOLERANCE) {
-    // The budget is the whole of the model's belief: a vector that sums to 1
-    // beside a positive noul has claimed more than all of it, and one that sums
-    // short has lost some. Either way the numbers do not describe a belief, and
-    // retrying cannot make them.
-    return { ok: false, reason: `mass for ${key} sums to ${total}, not 1` };
-  }
-
-  // Non-null by construction: the empty check above guarantees at least one pass.
-  return {
-    ok: true,
-    answer: { key: key as JevAnswer["key"], distribution: distribution as JevDistribution, noul, argmax: argmax as JevArgmax },
-  };
+  return { ok: true, distribution, mass, argmax: argmax as JevArgmax };
 }
 
 /**

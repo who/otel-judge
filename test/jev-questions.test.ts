@@ -76,9 +76,19 @@ describe("one batched request body", () => {
     const summary = state();
     const body = buildSystemOneRequest(summary, { JEV_MODEL: "jev-1.13.0" });
 
-    expect(body.questions.map((question) => question.key)).toEqual(
+        expect(Object.keys(body.questions)).toEqual(
       QUESTIONS.map((question) => question.key),
     );
+    for (const question of QUESTIONS) {
+      const wire = body.questions[question.key];
+      expect(wire?.type).toBe(question.type);
+      expect(wire && "instructions" in wire ? wire.instructions : undefined).toBe(question.text);
+      if (question.type === "choice") {
+        expect(wire && wire.type === "choice" ? Object.keys(wire.criteria) : []).toEqual([
+          ...(question.choices ?? []),
+        ]);
+      }
+    }
     expect(body.state).toEqual(summary);
   });
 

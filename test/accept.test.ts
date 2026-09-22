@@ -75,11 +75,13 @@ it("accepts a new packet with 202, one stored row, and a published snapshot", as
     expect(countPackets(sql)).toBe(1);
     expect(getPacketStatus(sql, "pkt-1")).toBe("accepted");
 
-    expect(instance.state.stage).toBe("accepted");
-    expect(instance.state.packets_seen).toBe(1);
-    expect(instance.state.last_packet_id).toBe("pkt-1");
-    expect(instance.state.agent_name).toBe("prod:checkout");
-    expect(instance.state.updated_at).not.toBe("1970-01-01T00:00:00.000Z");
+    expect(instance.state.packets).toHaveLength(1);
+    expect(instance.state.packets[0]).toMatchObject({
+      id: "pkt-1",
+      stage: "ingest",
+      summary: { service: "checkout" },
+    });
+    expect(instance.state.updatedAt).not.toBe("1970-01-01T00:00:00.000Z");
   });
 });
 
@@ -103,8 +105,8 @@ it("answers a repeated packet id as a duplicate and leaves the row count alone",
     });
 
     expect(countPackets(sqlTag(instance))).toBe(1);
-    expect(instance.state.packets_seen).toBe(published.packets_seen);
-    expect(instance.state.updated_at).toBe(published.updated_at);
+    expect(instance.state.packets).toHaveLength(published.packets.length);
+    expect(instance.state.updatedAt).toBe(published.updatedAt);
   });
 });
 
@@ -121,7 +123,7 @@ it("rejects an invalid packet with 400 and every field error in one reply", asyn
     expect(body.errors.some((error) => error.startsWith("exemplar_trace_ids:"))).toBe(true);
 
     expect(countPackets(sqlTag(instance))).toBe(0);
-    expect(instance.state.stage).toBe("idle");
+    expect(instance.state.packets).toEqual([]);
   });
 });
 

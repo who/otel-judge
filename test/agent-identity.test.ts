@@ -56,16 +56,26 @@ describe("naming", () => {
 });
 
 describe("initial state", () => {
-  it("publishes stage idle and zero packets seen on a cold Agent", async () => {
+  it("publishes an empty BoardState on a cold Agent", async () => {
     const snapshot = await runInDurableObject(
       judge("cold-start"),
       (instance: OtelJudgeAgent) => instance.state,
     );
 
     expect(snapshot).toEqual(INITIAL_STATE);
-    expect(snapshot.stage).toBe("idle");
-    expect(snapshot.packets_seen).toBe(0);
-    expect(snapshot.last_verdict).toBeNull();
+    expect(snapshot.packets).toEqual([]);
+    expect(snapshot.producer).toEqual({ scenario: "", ratePerSec: 0, paused: false });
+    expect(snapshot.updatedAt).toBe("1970-01-01T00:00:00.000Z");
+  });
+
+  it("publishes a BoardState adaptAgentState would accept (packets array)", async () => {
+    const snapshot = await runInDurableObject(
+      judge("board-adapt"),
+      (instance: OtelJudgeAgent) => instance.state,
+    );
+    expect(Array.isArray(snapshot.packets)).toBe(true);
+    expect(snapshot).toHaveProperty("producer");
+    expect(snapshot).toHaveProperty("updatedAt");
   });
 
   it("gives each Agent its own snapshot object to mutate", async () => {

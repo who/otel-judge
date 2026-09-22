@@ -166,7 +166,13 @@ describe("runEvaluate", () => {
     // two steps later.
     expect(milestones).toEqual([
       { packet_id: packet.packet_id, step: "summarize", stage: "summarized" },
-      { packet_id: packet.packet_id, step: "jev", stage: "jev", jev_status: "ok" },
+      {
+        packet_id: packet.packet_id,
+        step: "jev",
+        stage: "jev",
+        jev_status: "ok",
+        jev_distribution: { sev0: 0.05, sev1: 0.62, sev2: 0.21, noise: 0.04 },
+      },
       { packet_id: packet.packet_id, step: "judge", stage: "judging" },
     ]);
   });

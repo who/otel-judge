@@ -17,6 +17,6 @@
   "vars": {
     "LLAMA_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "JEV_MODEL": "jev-latest",
-    "DEMO_ORIGINS": "https://who.github.io"
+    "DEMO_ORIGINS": "https://who.github.io,http://localhost:5173,http://127.0.0.1:5173"
   }
 }

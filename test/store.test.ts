@@ -321,17 +321,18 @@ describe("history", () => {
     expect(record?.packet.payload.packet_id).toBe("pkt-corrupt");
   });
 
-  it("restores the published packet count when an Agent wakes up", async () => {
+  it("keeps an empty live board on wake; SQL history is the durable source", async () => {
     const seen = await withAgent("history-rehydrate", async (sql, instance) => {
-      expect(instance.state.packets_seen).toBe(0);
+      expect(instance.state.packets).toEqual([]);
       insertPacket(sql, packet({ packet_id: "pkt-a" }), "2026-09-21T15:00:00Z");
       insertPacket(sql, packet({ packet_id: "pkt-b" }), "2026-09-21T15:01:00Z");
 
       // A second start is what a wake after eviction looks like from in here.
+      // Board chips are not rebuilt from SQL; getHistory remains the deliberate read.
       await instance.onStart();
-      return instance.state.packets_seen;
+      return { board: instance.state.packets.length, stored: countPackets(sql) };
     });
 
-    expect(seen).toBe(2);
+    expect(seen).toEqual({ board: 0, stored: 2 });
   });
 });

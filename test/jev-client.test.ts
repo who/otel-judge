@@ -126,9 +126,9 @@ describe("a successful batched call", () => {
     expect(call?.init?.signal).toBeInstanceOf(AbortSignal);
     expect(JEV_TIMEOUT_MS).toBe(10_000);
 
-    const sent = JSON.parse(String(call?.init?.body)) as { model: string; questions: unknown[] };
+        const sent = JSON.parse(String(call?.init?.body)) as { model: string; questions: Record<string, unknown> };
     expect(sent.model).toBe("jev-1.13.0");
-    expect(sent.questions).toHaveLength(KEYS.length);
+    expect(Object.keys(sent.questions)).toEqual([...KEYS]);
   });
 
   it("sends the key trimmed rather than a bearer reading undefined or padded", async () => {
