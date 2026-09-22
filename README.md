@@ -200,3 +200,16 @@ Re-run `npx wrangler types` after changing `wrangler.jsonc`.
   is swapped, and the import boundary that keeps the Agent out of it.
 - **Decision history:** [`docs/DESIGN.md`](docs/DESIGN.md) — why, not what. Where
   the two disagree, the PRD wins.
+
+## AI-assisted coding disclosure
+
+This repository was developed with AI coding agents. The prompts that drove each unit of work are the bead issue texts (description, design, acceptance), published as:
+
+- [`PROMPT_HISTORY.md`](./PROMPT_HISTORY.md) — sanitized bead prompts, grouped by issue id
+- [`docs/SHIP.md`](./docs/SHIP.md) — ship-gate checklist (regenerate, review, commit)
+
+Regenerate before submit:
+
+```bash
+node scripts/prompt-history.mjs --from-beads
+```
