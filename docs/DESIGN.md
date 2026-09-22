@@ -23,7 +23,7 @@ Recorded here so the decision path stays auditable. Normative requirements live 
 5. **UI:** light-mode product demo on GitHub Pages; not Factorio-branded; not HN chrome.  
 6. **Prompt history:** raw Ortus logs gitignored; PRD ship gate publishes sanitized `PROMPT_HISTORY.md`.  
 7. **CF docs fit:** webhook/telemetry Agent + AgentWorkflow evaluate pipeline; Worker/Agent are sibling runtimes.  
-8. **Diamond lock (revised 2026-09-22):** full Jev distributions to Llama as the priors its verdict is grounded in; Llama waits for a successful Jev and is not asked at all when System One never answered; a departure from a noise-leaning prior must set `disagrees_with_prior` and cite the summary; no hard confidence / needs_human gates. The earlier lock let a Jev failure log-and-continue into Llama, which produced a flag on a packet System One had called noise.
+8. **Diamond lock (revised 2026-09-22):** full Jev distributions to Llama as the priors its verdict is grounded in; Llama waits for a successful Jev and is not asked at all when System One never answered; a departure from a noise-leaning prior must set `disagrees_with_prior` and cite the summary; a verdict that grades an incident over noise-majority priors (≥ 0.7) without setting that flag is deferred down to `noise` after the fact; no hard confidence / needs_human gates. The earlier lock let a Jev failure log-and-continue into Llama, which produced a flag on a packet System One had called noise.
 
 ---
 
@@ -36,4 +36,5 @@ When PRDs and DESIGN disagree, **PRD wins** after an explicit update; then note 
 ## Changelog
 
 - 2026-09-22 — Initial lock from architecture workshop; PRDs made normative for beads.
-- 2026-09-22 — Three PRDs locked: otel-judge, otel-judge-demo, otel-judge-firehose (producer elevated from optional stub).  
+- 2026-09-22 — Three PRDs locked: otel-judge, otel-judge-demo, otel-judge-firehose (producer elevated from optional stub).
+- 2026-09-22 — Soft prior deference: System Two's severity defers to a noise-majority prior unless it declares `disagrees_with_prior`.

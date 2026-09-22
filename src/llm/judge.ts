@@ -3,6 +3,7 @@ import type { JevAnswer, JevResult } from "../jev/types";
 import type { PacketSummary } from "../workflow/summarize";
 import { llamaModel, type LlamaEnv } from "./models";
 import { parseVerdict } from "./parse";
+import { applyPriorDeference } from "./priorDeference";
 
 /**
  * System Two: the model that reads the summary and the priors and says what it thinks.
@@ -11,10 +12,16 @@ import { parseVerdict } from "./parse";
  * evidence. The distributions are handed over entire — every outcome with its
  * mass, plus the mass the model placed on none of them — and the prompt says in
  * as many words that the judge may disagree with them so long as it explains
- * itself. Nothing here compares a probability with anything: no code path reads
- * a number out of a prior to decide routing, to block a verdict, or to demand a
- * human, because a judge whose output is gated by an arithmetic threshold is a
- * threshold wearing a judge's clothes.
+ * itself. No code path here reads a number out of a prior to decide routing, to
+ * block a verdict, or to demand a human, because a judge whose output is gated
+ * by an arithmetic threshold is a threshold wearing a judge's clothes.
+ *
+ * One number is read, and only after the judge has spoken: `applyPriorDeference`
+ * defers an incident grade to `noise` when the priors are lopsidedly noise and
+ * the verdict claimed no disagreement with them. That is a tie-break between two
+ * speakers who contradicted each other, not a gate on the second one — the judge
+ * is asked every time, answers in full every time, and an explicit disagreement
+ * still stands.
  */
 
 /** How many tokens one verdict may take; a structured answer with prose fields fits well inside. */
@@ -250,6 +257,11 @@ function replyText(reply: unknown): string {
  * unknown-severity verdict in stored history. Only an unreadable reply degrades,
  * because a model that answered something is a model that will answer the same
  * something again.
+ *
+ * Deference to the priors is applied here, before the verdict leaves, rather
+ * than at either place that keeps one. The board paints a severity and SQL
+ * stores a severity, and two call sites applying the same rule are two chances
+ * for the chip and the history row to disagree about the same packet.
  */
 export async function judgeWithLlama(
   env: JudgeEnv,
@@ -274,5 +286,6 @@ export async function judgeWithLlama(
   // it was asked.
   const latency_ms = Math.max(0, Math.round(Date.now() - startedAt));
 
-  return { verdict: parseVerdict(replyText(reply)), model, prompt, latency_ms };
+  const verdict = applyPriorDeference(parseVerdict(replyText(reply)), jev);
+  return { verdict, model, prompt, latency_ms };
 }
