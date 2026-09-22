@@ -6,6 +6,15 @@ import type { SystemOneState } from "../src/jev/request";
 
 const KEYS = QUESTIONS.map((question) => question.key);
 
+/**
+ * Every case here is about what the client does once it has a key.
+ *
+ * A call with no key never reaches the network at all — that path is the
+ * degraded suite's subject — so a keyless env in this file would be testing the
+ * short circuit by accident instead of the transport on purpose.
+ */
+const KEYED = { TYPESAFE_API_KEY: "secret-key" };
+
 /** A compact summary of the shape the summarize step hands the client. */
 const STATE: SystemOneState = {
   service: "checkout",
@@ -77,7 +86,7 @@ describe("a successful batched call", () => {
   it("returns every question key carrying its full distributions and noul mass", async () => {
     stubFetch(() => new Response(okBody(), { status: 200 }));
 
-    const result = await callSystemOne({ TYPESAFE_API_KEY: "secret-key" }, STATE);
+    const result = await callSystemOne(KEYED, STATE);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -92,7 +101,7 @@ describe("a successful batched call", () => {
   it("adds an argmax beside the distributions rather than in place of them", async () => {
     stubFetch(() => new Response(okBody(), { status: 200 }));
 
-    const result = await callSystemOne({}, STATE);
+    const result = await callSystemOne(KEYED, STATE);
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -122,13 +131,13 @@ describe("a successful batched call", () => {
     expect(sent.questions).toHaveLength(KEYS.length);
   });
 
-  it("omits the authorization header rather than sending an undefined bearer", async () => {
+  it("sends the key trimmed rather than a bearer reading undefined or padded", async () => {
     const calls = stubFetch(() => new Response(okBody(), { status: 200 }));
 
-    await callSystemOne({}, STATE);
+    await callSystemOne({ TYPESAFE_API_KEY: "  secret-key\n" }, STATE);
 
     const headers = calls[0]?.init?.headers as Record<string, string>;
-    expect("authorization" in headers).toBe(false);
+    expect(headers.authorization).toBe("Bearer secret-key");
     expect(JSON.stringify(headers)).not.toContain("undefined");
   });
 });
@@ -137,7 +146,7 @@ describe("transport and status failures", () => {
   it("flags HTTP 500 retryable and reports the status it saw", async () => {
     const calls = stubFetch(() => new Response("upstream is unwell", { status: 500 }));
 
-    const result = await callSystemOne({ TYPESAFE_API_KEY: "secret-key" }, STATE);
+    const result = await callSystemOne(KEYED, STATE);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -150,7 +159,7 @@ describe("transport and status failures", () => {
   it("flags HTTP 429 retryable", async () => {
     stubFetch(() => new Response("slow down", { status: 429 }));
 
-    const result = await callSystemOne({}, STATE);
+    const result = await callSystemOne(KEYED, STATE);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -161,7 +170,7 @@ describe("transport and status failures", () => {
   it("flags a network rejection retryable and names it a network error", async () => {
     rejectingFetch(new TypeError("connection refused"));
 
-    const result = await callSystemOne({}, STATE);
+    const result = await callSystemOne(KEYED, STATE);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -173,7 +182,7 @@ describe("transport and status failures", () => {
   it("flags a timeout retryable and tells it apart from a network error", async () => {
     rejectingFetch(Object.assign(new Error("The operation timed out"), { name: "TimeoutError" }));
 
-    const result = await callSystemOne({}, STATE);
+    const result = await callSystemOne(KEYED, STATE);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -186,7 +195,7 @@ describe("transport and status failures", () => {
     for (const status of [400, 401, 403, 404]) {
       stubFetch(() => new Response("no", { status }));
 
-      const result = await callSystemOne({ TYPESAFE_API_KEY: "secret-key" }, STATE);
+      const result = await callSystemOne(KEYED, STATE);
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
@@ -202,7 +211,7 @@ describe("a body that cannot be read", () => {
     short[1] = { key: "needs_human", distribution: { yes: 0.2, no: 0.2 }, noul: 0.1 };
     stubFetch(() => new Response(JSON.stringify({ answers: short }), { status: 200 }));
 
-    const result = await callSystemOne({}, STATE);
+    const result = await callSystemOne(KEYED, STATE);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -216,7 +225,7 @@ describe("a body that cannot be read", () => {
     overfull[3] = { key: "noise_likely", distribution: { yes: 0.4, no: 0.6 }, noul: 0.3 };
     stubFetch(() => new Response(JSON.stringify({ answers: overfull }), { status: 200 }));
 
-    const result = await callSystemOne({}, STATE);
+    const result = await callSystemOne(KEYED, STATE);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -226,7 +235,7 @@ describe("a body that cannot be read", () => {
 
   it("treats an HTML or empty 200 as malformed instead of throwing", async () => {
     stubFetch(() => new Response("<html>gateway</html>", { status: 200 }));
-    const html = await callSystemOne({}, STATE);
+    const html = await callSystemOne(KEYED, STATE);
 
     expect(html.ok).toBe(false);
     if (html.ok) return;
@@ -234,7 +243,7 @@ describe("a body that cannot be read", () => {
     expect(html.reason).toContain("not JSON");
 
     stubFetch(() => new Response("", { status: 200 }));
-    const empty = await callSystemOne({}, STATE);
+    const empty = await callSystemOne(KEYED, STATE);
 
     expect(empty.ok).toBe(false);
     if (empty.ok) return;
@@ -245,7 +254,7 @@ describe("a body that cannot be read", () => {
     const four = answers().filter((answer) => answer.key !== "deploy_related");
     stubFetch(() => new Response(JSON.stringify({ answers: four }), { status: 200 }));
 
-    const result = await callSystemOne({}, STATE);
+    const result = await callSystemOne(KEYED, STATE);
 
     expect(result.ok).toBe(false);
     if (result.ok) return;

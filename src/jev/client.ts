@@ -1,3 +1,4 @@
+import { jevApiKey, MISSING_API_KEY, type JevKeyEnv } from "./degraded";
 import { parseSystemOneResponse } from "./parse";
 import {
   buildSystemOneRequest,
@@ -39,9 +40,7 @@ export const JEV_TIMEOUT_MS = 10_000;
  * literal. The key is a Wrangler secret and stays in this function: it is never
  * logged, never returned in a failure reason, and never stored.
  */
-export interface JevClientEnv extends JevEnv {
-  readonly TYPESAFE_API_KEY?: string;
-}
+export interface JevClientEnv extends JevEnv, JevKeyEnv {}
 
 function failure(retryable: boolean, reason: string, status?: number): JevFailure {
   return status === undefined ? { ok: false, retryable, reason } : { ok: false, retryable, reason, status };
@@ -75,6 +74,18 @@ function describeTransportError(error: unknown): string {
  * and their home is SQL, not a log line somebody greps months later.
  */
 export async function callSystemOne(env: JevClientEnv, state: SystemOneState): Promise<JevResult> {
+  // Before anything is built or sent: with no key there is nothing to try, and
+  // an attempt would spend a whole timeout learning what the environment could
+  // have said immediately. Non-retryable because no number of attempts
+  // configures a secret. One log line, naming the token and nothing else, so a
+  // deployment missing its key is visible without a credential ever reaching a
+  // log sink.
+  const key = jevApiKey(env);
+  if (key === "") {
+    console.warn(`System One was not called: ${MISSING_API_KEY}`);
+    return failure(false, MISSING_API_KEY);
+  }
+
   let body: SystemOneRequestBody;
   try {
     body = buildSystemOneRequest(state, env);
@@ -85,12 +96,14 @@ export async function callSystemOne(env: JevClientEnv, state: SystemOneState): P
     return failure(false, `request could not be built: ${detail}`);
   }
 
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  const key = env.TYPESAFE_API_KEY?.trim();
-  // Omitted entirely rather than sent as "Bearer undefined": a header that is
-  // absent is a configuration fact the API answers plainly, while one carrying
-  // the word undefined is a credential that looks real and never was.
-  if (key) headers.authorization = `Bearer ${key}`;
+  // The key is known to be present and trimmed by the time it gets here, so
+  // this header can never read "Bearer undefined" or carry the stray spaces a
+  // copy-pasted secret arrives with — the request either goes out credentialed
+  // or it was never built.
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    authorization: `Bearer ${key}`,
+  };
 
   const startedAt = Date.now();
   let response: Response;
