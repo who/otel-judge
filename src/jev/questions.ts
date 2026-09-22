@@ -63,8 +63,12 @@ export interface SystemOneQuestion {
  * appending in the middle would quietly change what two runs mean side by side.
  * `as const` freezes it for the compiler and `Object.freeze` for the runtime,
  * because a shared constant that anything may splice is not a contract.
+ *
+ * The literal table stays private so `QuestionKey` can go on being derived from
+ * it. What every consumer reads is `QUESTIONS` below, the same frozen array
+ * declared as the interface.
  */
-export const QUESTIONS = Object.freeze([
+const QUESTION_TABLE = Object.freeze([
   {
     key: "severity",
     type: "choice",
@@ -95,10 +99,25 @@ export const QUESTIONS = Object.freeze([
 ] as const) satisfies readonly SystemOneQuestion[];
 
 /**
+ * The question set as the rest of the judge sees it: the interface, not the
+ * literals that happen to satisfy it today.
+ *
+ * The declared type is what keeps the empty-choices guard in
+ * `buildSystemOneRequest` honest. Inferred from the table, `choices.length` is
+ * `4 | 5`, and a guard asking whether it is zero is a comparison the compiler
+ * can prove will never be true — an argument about the five questions authored
+ * so far rather than about the contract the guard exists to defend. Declaring
+ * the interface widens that length back to `number`, so the day a sixth
+ * question is added with its choices missed, the guard is still reachable code
+ * and still throws.
+ */
+export const QUESTIONS: readonly SystemOneQuestion[] = QUESTION_TABLE;
+
+/**
  * Every key that may ever appear in an answer, derived from the map itself.
  *
  * Deriving rather than declaring means a question added below is a question the
  * compiler immediately demands every downstream switch handle, instead of one
  * that silently falls through a default branch nobody revisits.
  */
-export type QuestionKey = (typeof QUESTIONS)[number]["key"];
+export type QuestionKey = (typeof QUESTION_TABLE)[number]["key"];
