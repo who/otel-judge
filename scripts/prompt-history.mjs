@@ -42,6 +42,11 @@ const assignment = new RegExp(`${key}(?:${quote})?${gap}*[:=]${gap}*(?:${quote}[
 const bearer = new RegExp(`\\bBearer${gap}+[A-Za-z0-9._~+/-]+=*`, 'gi');
 const longValue = /[A-Za-z0-9_+/=-]{32,}/g;
 const hostname = /\b(?:[a-z0-9-]+\.)+workers\.dev\b/gi;
+/** Local machine / account names that must never ship in a public disclosure. */
+const localMachine = /\bCONDOR2\b/gi;
+const localHome = /\/home\/condor\b/g;
+const localUserAt = /\bcondor@/gi;
+
 const email = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -54,6 +59,9 @@ export function sanitize(text, repoRoot) {
     .replace(bearer, 'Bearer [redacted]')
     .replace(longValue, '[redacted]')
     .replace(hostname, '[redacted-host]')
+    .replace(localMachine, '[redacted-machine]')
+    .replace(localHome, '[redacted-home]')
+    .replace(localUserAt, '[redacted-user]@')
     .replace(email, '[redacted-email]');
 }
 
@@ -70,7 +78,7 @@ export function verifySanitized(text, file, line) {
   // Refuse the shape redaction claims to remove, character class included: a
   // looser class made the rules' own prose and `const bearer = /…/` unsafe.
   if (credential.test(withoutMarkers) || new RegExp(`\\bBearer${gap}+[A-Za-z0-9._~+/-]`, 'i').test(withoutMarkers)
-      || [longValue, hostname, email].some((pattern) => new RegExp(pattern.source, 'i').test(withoutMarkers))) {
+      || [longValue, hostname, email, localMachine, localHome, localUserAt].some((pattern) => new RegExp(pattern.source, 'i').test(withoutMarkers))) {
     throw new Error(`Unsafe content at ${file}:${line}`);
   }
 }
