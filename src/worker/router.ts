@@ -1,6 +1,7 @@
 import { routeAgentRequest } from "agents";
 import { handleIngest, INGEST_PATH } from "../ingress/ingest";
 import { handleOtlpIngest, OTLP_INGEST_PATH } from "../ingress/otlp";
+import { handleReset, RESET_PATH } from "../ingress/reset";
 import { corsHeaders, handlePreflight } from "./cors";
 import { jsonError } from "./errors";
 import { enforceBodyLimit } from "./limits";
@@ -66,6 +67,14 @@ export async function handleRequest(
   // else, which is the portability claim stated as code.
   if (url.pathname === OTLP_INGEST_PATH && request.method === "POST") {
     return withHeaders(await handleOtlpIngest(request, env), cors);
+  }
+
+  // Claimed here rather than left to the SDK router because the demo addresses
+  // the board through the Worker, never a Durable Object URL, and because the
+  // gate this route is behind belongs in front of the Agent rather than inside
+  // it. Any other method on this path falls through to the 404 below.
+  if (url.pathname === RESET_PATH && request.method === "POST") {
+    return withHeaders(await handleReset(env), cors);
   }
 
   // A WebSocket upgrade carries no body to buffer and must reach the Agent

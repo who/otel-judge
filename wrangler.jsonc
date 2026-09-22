@@ -17,6 +17,9 @@
   "vars": {
     "LLAMA_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "JEV_MODEL": "jev-latest",
-    "DEMO_ORIGINS": "https://who.github.io,http://localhost:5173,http://127.0.0.1:5173"
+    "DEMO_ORIGINS": "https://who.github.io,http://localhost:5173,http://127.0.0.1:5173",
+    // Local demo convenience: POST /reset empties the shared board. A deployed
+    // Judge should omit this var or set it to "0", which refuses the route.
+    "ALLOW_BOARD_RESET": "1"
   }
 }

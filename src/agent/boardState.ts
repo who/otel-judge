@@ -14,6 +14,16 @@ import type { Stage } from "./state";
 /** Instance name the demo board connects to (`AGENT_INSTANCE` in otel-judge-demo). */
 export const BOARD_INSTANCE_NAME = "board";
 
+/**
+ * Marks an internal POST as the board wipe rather than a packet to accept.
+ *
+ * The Agent's door is one method on one path, so a request says which of the
+ * internal operations it is in a header. Spelled here beside the instance name
+ * because the writer is the reset route and the reader is the Agent: two files,
+ * and a literal in each is a rename waiting to go half-done.
+ */
+export const BOARD_RESET_HEADER = "x-otel-judge-board-reset";
+
 /** Cap so a busy firehose cannot grow Agent state without bound. */
 export const MAX_BOARD_PACKETS = 48;
 

@@ -15,6 +15,7 @@ import {
   applyMilestoneToBoard,
   applyTerminalToBoard,
   BOARD_INSTANCE_NAME,
+  BOARD_RESET_HEADER,
   boardPacketFromIntake,
   INITIAL_BOARD_STATE,
   upsertBoardPacket,
@@ -28,6 +29,7 @@ import {
   type EvaluationOutcome,
 } from "./persist";
 import {
+  clearAllHistory,
   ensureSchema,
   getPacketRecord,
   hasPacket,
@@ -114,6 +116,11 @@ export class OtelJudgeAgent extends Agent<Env, BoardState> {
       return this.handleBoardUpsert(body);
     }
 
+    // Internal wipe from the gated reset route, which sends no packet to store.
+    if (request.headers.get(BOARD_RESET_HEADER) === "1") {
+      return this.handleBoardReset();
+    }
+
     let outcome: AcceptOutcome;
     try {
       outcome = acceptPacket({ sql: sqlTag(this) }, body);
@@ -139,6 +146,30 @@ export class OtelJudgeAgent extends Agent<Env, BoardState> {
       default:
         return this.publishAccepted(outcome.packet, outcome.received_at);
     }
+  }
+
+  /**
+   * Forget everything this instance holds: the tables, then the live snapshot.
+   *
+   * SQL first so a failure there cannot leave a browser looking at an empty
+   * board over a full table — the caller is told nothing was cleared and the
+   * state it can see still matches what is stored. The published snapshot is a
+   * fresh copy of the idle board rather than an edit of the current one, so an
+   * Agent that has been reset is indistinguishable from one that just woke.
+   */
+  private handleBoardReset(): Response {
+    try {
+      clearAllHistory(sqlTag(this));
+    } catch {
+      return jsonError("reset_failed", "The stored history could not be cleared; retry it", 500);
+    }
+
+    this.setState({
+      ...INITIAL_BOARD_STATE,
+      packets: [],
+      producer: { ...INITIAL_BOARD_STATE.producer },
+    });
+    return Response.json({ ok: true, cleared: true }, { status: 200 });
   }
 
   private handleBoardUpsert(body: string): Response {

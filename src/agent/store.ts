@@ -597,3 +597,20 @@ export function countPackets(sql: SqlTag): number {
   const rows = sql<{ total: number }>`SELECT COUNT(*) AS total FROM packets`;
   return rows[0]?.total ?? 0;
 }
+
+/**
+ * Empty every history table this Agent owns, leaving the schema in place.
+ *
+ * Children before parents — labels and answers name a packet, runs and verdicts
+ * key on one, and `packets` goes last — so the order stays correct on the day a
+ * foreign key is declared on any of them. `DELETE` rather than `DROP TABLE`:
+ * `ensureSchema` ran at wake and the tables have to still be there for the next
+ * accept, which arrives without another `onStart` to rebuild them.
+ */
+export function clearAllHistory(sql: SqlTag): void {
+  sql`DELETE FROM human_labels`;
+  sql`DELETE FROM jev_answers`;
+  sql`DELETE FROM jev_runs`;
+  sql`DELETE FROM verdicts`;
+  sql`DELETE FROM packets`;
+}
