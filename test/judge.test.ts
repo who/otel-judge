@@ -179,6 +179,33 @@ describe("buildJudgePrompt with System One priors", () => {
     expect(system).toContain("concrete figures from the summary");
   });
 
+  it("grades severity from a criticality by failure-class grid rather than from volume", () => {
+    const { system } = buildJudgePrompt(summaryOf(), success());
+
+    // Both axes have to be nameable from what the summary already carries — the
+    // service, the top error spans, the alert labels. A grid the judge cannot
+    // locate itself in is a paragraph, not a rule.
+    expect(system).toContain("critical path");
+    expect(system).toContain("core path");
+    expect(system).toContain("optional path");
+    expect(system).toContain("best-effort");
+    expect(system).toContain("checkout");
+    expect(system).toContain("Client-class");
+    expect(system).toContain("Server-class");
+
+    // The cells themselves, because the failure this exists for is a judge that
+    // flags every chaos-like window alike: a 5xx on search is not a 5xx on
+    // checkout, and only the stated grades say so.
+    expect(system).toContain("Server-class failure on an optional path is sev2");
+    expect(system).toContain("Server-class failure on a core path is sev1");
+    expect(system).toContain("Server-class failure on a critical path is sev0");
+
+    // An unlabelled window falls back to the names and then to the prior, never
+    // to the worst cell the summary would allow.
+    expect(system).toContain("infer it from the service and span names");
+    expect(system).toContain("grade from the severity prior alone");
+  });
+
   it("names a question that came back without an answer instead of filling the gap", () => {
     const partial = ANSWERS.filter((answer) => answer.key !== "noise_likely");
     const { user } = buildJudgePrompt(summaryOf(), success(partial));

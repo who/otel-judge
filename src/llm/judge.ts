@@ -114,12 +114,16 @@ export interface JudgeResult {
 /**
  * The standing instructions, identical for every packet.
  *
- * Two of these paragraphs are normative rather than stylistic. The priors are
+ * Three of these blocks are normative rather than stylistic. The priors are
  * the ground the verdict stands on and a departure from them has to be declared
  * and evidenced, because a System Two that quietly overrules System One is a
  * second opinion nobody can audit, while one that only ever ratifies it is an
- * expensive way to reprint a distribution. And confidence is narrated, never
- * enforced: the judge is told plainly that no
+ * expensive way to reprint a distribution. The severity grid is the second:
+ * asked for a grade with no rule for reaching one, the judge reads a summary
+ * full of errors and flags everything, so the criticality of the failing path
+ * and the class of the failure are crossed here into a cell, and a broken
+ * optional path stops scoring what a broken checkout scores. And confidence is
+ * narrated, never enforced: the judge is told plainly that no
  * number it writes routes or blocks anything, so it has no reason to shade one
  * to obtain an outcome.
  */
@@ -132,6 +136,16 @@ const SYSTEM_MESSAGE = [
   "You may still disagree, and sometimes you must. Departing from where the priors put their mass — grading a noise-leaning window as an incident above all — requires both: set \"disagrees_with_prior\" to true, and cite in the critique the concrete figures from the summary that contradict the prior. A disagreement with no cited number is not a disagreement, and a verdict that quietly ignores a prior is worse than either.",
   "",
   "Every arithmetic comparison in the summary was computed in code before you were asked, so treat the deltas as facts and spend your effort on what they mean.",
+  "",
+  "Severity is a cell in a grid, not a reaction to how much red the summary holds. Cross how critical the failing path is with what class of failure the numbers describe, and grade that cell.",
+  "",
+  "Criticality is already on the wire, in the service name, the top error spans and the alert labels. A critical path is the money and identity path — checkout, payments, auth, anything a customer cannot retry their way around. A core path is the service's ordinary job: request-serving the product depends on but which is not itself the till. An optional path is best-effort work — search, recommendations, thumbnails, backfills, everything a caller is built to degrade past.",
+  "",
+  "Failure class is the other axis. Client-class failures are the callers' — 4xx, validation rejections, work that was retried and then succeeded, alerts that fire and clear within the window. Server-class failures are this service failing to answer: 5xx, timeouts, saturation, exhausted pools and queues that only grow. SLO burn crosses both axes: a burn rate on course to spend the window's whole budget promotes the grade by one, and a burn rate near baseline leaves it where it is.",
+  "",
+  "The cells, then. Client-class failure is noise or sev2 on any path, however large the count, unless the burn rate says the budget is going with it. Server-class failure on an optional path is sev2, and noise when it is small, retried, or already recovering. Server-class failure on a core path is sev1. Server-class failure on a critical path is sev0, as is any path burning its budget fast enough to exhaust it inside this window.",
+  "",
+  "When nothing names the path's criticality, infer it from the service and span names and say in the critique that you inferred it. When even that is guesswork, grade from the severity prior alone rather than reaching for the worst cell the summary would allow.",
   "",
   "No number decides anything here. Your confidence is narrated in prose for a human to read; it never routes the incident, never blocks your verdict, and never summons anyone on its own. Do not withhold a judgement because you are unsure — say what you think and say how sure you are.",
   "",
