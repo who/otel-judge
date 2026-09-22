@@ -92,6 +92,16 @@ export interface JudgeResult {
   verdict: Verdict;
   model: string;
   prompt: JudgePrompt;
+  /**
+   * Wall-clock milliseconds the binding call took, as a non-negative integer.
+   *
+   * It measures the model and nothing else: building the prompt is this
+   * repository's own work and reading it as System Two's cost would flatter a
+   * slow binding. A call that rejects produces no result at all, so a value here
+   * always belongs to the attempt that answered rather than to the sum of the
+   * attempts the workflow spent getting there.
+   */
+  latency_ms: number;
 }
 
 /**
@@ -249,6 +259,7 @@ export async function judgeWithLlama(
   const model = llamaModel(env);
   const prompt = buildJudgePrompt(summary, jev);
 
+  const startedAt = Date.now();
   const reply = await env.AI.run(model, {
     messages: [
       { role: "system", content: prompt.system },
@@ -257,6 +268,11 @@ export async function judgeWithLlama(
     max_tokens: MAX_VERDICT_TOKENS,
     temperature: JUDGE_TEMPERATURE,
   });
+  // Clamped and rounded here rather than by every reader: a host clock that
+  // steps backwards mid-call is the one way this subtraction goes negative, and
+  // a negative duration on the board would read as a model that answered before
+  // it was asked.
+  const latency_ms = Math.max(0, Math.round(Date.now() - startedAt));
 
-  return { verdict: parseVerdict(replyText(reply)), model, prompt };
+  return { verdict: parseVerdict(replyText(reply)), model, prompt, latency_ms };
 }

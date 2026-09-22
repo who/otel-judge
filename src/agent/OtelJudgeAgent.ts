@@ -248,6 +248,7 @@ export class OtelJudgeAgent extends Agent<Env, BoardState> {
           ok: true,
           jev: outcome.result.jev,
           verdict: outcome.result.verdict?.verdict,
+          llama_latency_ms: outcome.result.verdict?.latency_ms,
         })
       : applyTerminalToBoard(this.state, {
           packet_id: outcome.packet_id,

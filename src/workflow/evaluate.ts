@@ -1,6 +1,6 @@
 import type { WorkflowStepConfig } from "cloudflare:workers";
 import type { JevDistribution } from "../agent/boardState";
-import { jevDistributionFromResult } from "../agent/boardState";
+import { jevDistributionFromResult, jevLatencyFromResult } from "../agent/boardState";
 import type { Stage } from "../agent/state";
 import { jevStateStatus } from "../jev/degraded";
 import type { SystemOneState } from "../jev/request";
@@ -106,6 +106,15 @@ export interface EvaluateMilestone {
   jev_status?: "ok" | "unavailable";
   /** Severity distribution for the board chip when System One answered. */
   jev_distribution?: JevDistribution;
+  /**
+   * What the model that has just finished cost, in milliseconds.
+   *
+   * Each is carried on the milestone that crosses its own boundary, so the board
+   * learns what System One cost while System Two is still thinking rather than
+   * having to wait for the run to end to show either number.
+   */
+  jev_latency_ms?: number;
+  llama_latency_ms?: number;
 }
 
 /**
@@ -276,6 +285,7 @@ export async function runEvaluate(
     stage: STEP_STAGES.jev,
     jev_status: jevStateStatus(jev),
     jev_distribution: jevDistributionFromResult(jev),
+    jev_latency_ms: jevLatencyFromResult(jev),
   });
 
   // System Two is not asked without System One's answers. A verdict reached from
@@ -285,7 +295,12 @@ export async function runEvaluate(
   if (!jev.ok) return { packet_id: packetId, summary, jev, failed_at: "jev" };
 
   const verdict = await step.do("judge", STEP_RETRIES.judge, async () => deps.judge(summary, jev));
-  await report({ packet_id: packetId, step: "judge", stage: STEP_STAGES.judge });
+  await report({
+    packet_id: packetId,
+    step: "judge",
+    stage: STEP_STAGES.judge,
+    llama_latency_ms: verdict.latency_ms,
+  });
 
   return { packet_id: packetId, summary, jev, verdict };
 }

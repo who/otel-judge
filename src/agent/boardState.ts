@@ -50,6 +50,16 @@ export interface BoardPacket {
    * written at all; a `false` here would read as skipped on the board.
    */
   jevUnavailable?: true;
+  /**
+   * What each system cost, in whole milliseconds, when it was asked and answered.
+   *
+   * Absent rather than zero when that model did not run — an unreachable System
+   * One times nothing, and a System Two that was never asked has no duration to
+   * report — because the demo draws a dash for a missing field and would draw a
+   * suspiciously fast model for a present zero.
+   */
+  jevLatencyMs?: number;
+  llamaLatencyMs?: number;
 }
 
 export interface ProducerState {
@@ -138,6 +148,25 @@ export function jevDistributionFromResult(jev: JevResult): JevDistribution | und
   return { ...severity.distribution };
 }
 
+/**
+ * A duration fit to publish, or nothing.
+ *
+ * Every latency reaching the wire passes through here, so a NaN from arithmetic
+ * on a missing timestamp or a negative from a stepped clock is dropped at the
+ * boundary instead of being rendered on a chip. Whole milliseconds, because the
+ * board shows a number and a fraction of a millisecond is not news.
+ */
+export function publishableLatencyMs(latency: number | undefined): number | undefined {
+  if (latency === undefined) return undefined;
+  if (!Number.isFinite(latency) || latency < 0) return undefined;
+  return Math.round(latency);
+}
+
+/** What System One cost when it answered; a failed call timed nothing worth showing. */
+export function jevLatencyFromResult(jev: JevResult): number | undefined {
+  return jev.ok ? publishableLatencyMs(jev.latency_ms) : undefined;
+}
+
 export function severityToLlamaLabel(severity: VerdictSeverity | string): LlamaVerdictLabel {
   switch (severity) {
     case "sev0":
@@ -184,6 +213,8 @@ export function applyMilestoneToBoard(
     packet_id: string;
     stage: Stage;
     jev_distribution?: JevDistribution;
+    jev_latency_ms?: number;
+    llama_latency_ms?: number;
   },
   now: Date = new Date(),
 ): BoardState {
@@ -198,11 +229,19 @@ export function applyMilestoneToBoard(
     summary: { service: "", operation: "", durationMs: 0, statusCode: 0 },
   };
 
+  const jevLatencyMs = publishableLatencyMs(milestone.jev_latency_ms);
+  const llamaLatencyMs = publishableLatencyMs(milestone.llama_latency_ms);
+
   const updated = withJevUnavailable(
     {
       ...base,
       stage: nextStage,
       ...(milestone.jev_distribution ? { jev: milestone.jev_distribution } : {}),
+      // Compared against undefined rather than tested for truth: a call that
+      // came back in under half a millisecond rounds to a legitimate 0 and must
+      // still reach the chip.
+      ...(jevLatencyMs === undefined ? {} : { jevLatencyMs }),
+      ...(llamaLatencyMs === undefined ? {} : { llamaLatencyMs }),
     },
     // A milestone is a claim about a run still moving. An unreachable System One
     // is not yet a skipped System Two at this point, and a re-evaluation that
@@ -220,6 +259,7 @@ export function applyTerminalToBoard(
     ok: boolean;
     jev?: JevResult;
     verdict?: Verdict;
+    llama_latency_ms?: number;
   },
   now: Date = new Date(),
 ): BoardState {
@@ -234,12 +274,21 @@ export function applyTerminalToBoard(
   const jev = args.jev ? jevDistributionFromResult(args.jev) : base.jev;
   const llama = args.ok && args.verdict ? llamaFromVerdict(args.verdict) : base.llama;
 
+  // A run that ended without a timed answer leaves whatever the chip already
+  // carried alone, exactly as the distribution and the verdict above do. What it
+  // may never do is put a duration beside a model that was not asked.
+  const jevLatencyMs = args.jev ? jevLatencyFromResult(args.jev) : undefined;
+  const llamaLatencyMs =
+    args.ok && args.verdict ? publishableLatencyMs(args.llama_latency_ms) : undefined;
+
   const updated = withJevUnavailable(
     {
       ...base,
       stage: "verdict",
       ...(jev ? { jev } : {}),
       ...(llama ? { llama } : {}),
+      ...(jevLatencyMs === undefined ? {} : { jevLatencyMs }),
+      ...(llamaLatencyMs === undefined ? {} : { llamaLatencyMs }),
     },
     // A verdict — this run's or one an earlier run already left on the chip —
     // settles the packet: something judged it, so nothing was skipped. What is

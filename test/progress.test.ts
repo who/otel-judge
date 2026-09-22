@@ -63,6 +63,7 @@ const VERDICT: JudgeResult = {
   },
   model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   prompt: { system: "the standing judge instructions", user: "the summary and the priors" },
+  latency_ms: 1840,
 };
 
 /** System One unreachable with nothing to retry: the run ends before the judge. */
@@ -158,6 +159,33 @@ describe("a packet being judged", () => {
       // A judged packet says nothing about a skip, so the marker stays off the wire.
       expect(chip?.jevUnavailable).toBeUndefined();
       expect(instance.state.packets).toHaveLength(1);
+    });
+  });
+
+  it("publishes what each system cost, System One's as soon as it answered", async () => {
+    await withAgent("progress-latency", async (instance) => {
+      const workflowId = await acceptFixture(instance);
+
+      const step = new RecordingStep(instance);
+      const result = await evaluate(instance, step);
+
+      // Every snapshot here was taken before the run was reported complete, so a
+      // duration appearing in one of them is a duration the board had while
+      // System Two was still thinking. That is the point of putting both systems
+      // on one chip: a board that only learns System One's cost at the verdict
+      // cannot show the two of them racing. The stage the chip happens to be at
+      // is deliberately not part of the assertion — the packet is also being
+      // judged by the Agent's own workflow, which is free to move it along.
+      const timedDuringRun = step.snapshots.some(
+        (state) => state.packets.find((p) => p.id === result.packet_id)?.jevLatencyMs === 412,
+      );
+      expect(timedDuringRun).toBe(true);
+
+      await instance.onWorkflowComplete("EVALUATE_WORKFLOW", workflowId, result);
+
+      const chip = instance.state.packets.find((p) => p.id === result.packet_id);
+      expect(chip?.jevLatencyMs).toBe(412);
+      expect(chip?.llamaLatencyMs).toBe(1840);
     });
   });
 
@@ -300,6 +328,11 @@ describe("a packet being judged", () => {
       expect(chip?.jevUnavailable).toBe(true);
       expect(chip?.llama).toBeUndefined();
       expect(chip?.jev).toBeUndefined();
+
+      // Neither model produced a timed answer, and a chip that showed a
+      // duration for one of them would be reporting work nobody did.
+      expect(chip?.jevLatencyMs).toBeUndefined();
+      expect(chip?.llamaLatencyMs).toBeUndefined();
     });
   });
 
@@ -326,6 +359,7 @@ describe("a packet being judged", () => {
       const chip = instance.state.packets.find((p) => p.id === judged.packet_id);
       expect(chip?.jevUnavailable).toBeUndefined();
       expect(chip?.llama?.label).toBe("flag");
+      expect(chip?.llamaLatencyMs).toBe(1840);
     });
   });
 

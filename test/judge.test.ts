@@ -322,6 +322,29 @@ describe("judgeWithLlama", () => {
     expect(result.verdict.severity).toBe("sev1");
   });
 
+  it("reports what the call cost as whole non-negative milliseconds", async () => {
+    const { env } = stub(() => ({ response: VERDICT_JSON }));
+    const result = await judgeWithLlama(env, summaryOf(), success());
+
+    // A stub answers without touching the network, so the honest measurement is
+    // a very small one. The assertion is about the shape the board publishes —
+    // present, whole, never negative — rather than about a duration a test
+    // machine is in no position to promise.
+    expect(Number.isInteger(result.latency_ms)).toBe(true);
+    expect(result.latency_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("times the call even when the reply degrades to an unknown verdict", async () => {
+    const { env } = stub(() => ({ response: "no JSON here, sorry" }));
+    const result = await judgeWithLlama(env, summaryOf(), success());
+
+    // The model was asked and it answered; that the answer could not be parsed
+    // is a fact about the reply, not a reason to publish a chip claiming System
+    // Two was never reached.
+    expect(Number.isInteger(result.latency_ms)).toBe(true);
+    expect(result.latency_ms).toBeGreaterThanOrEqual(0);
+  });
+
   it("asks the model the deployment pinned rather than the default", async () => {
     const { env, calls } = stub(() => ({ response: VERDICT_JSON }));
     const result = await judgeWithLlama(

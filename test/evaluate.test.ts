@@ -84,6 +84,7 @@ const VERDICT: JudgeResult = {
   },
   model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
   prompt: { system: "system message", user: "user message" },
+  latency_ms: 1840,
 };
 
 /** A System One call that answered, with one question's distribution on it. */
@@ -172,8 +173,9 @@ describe("runEvaluate", () => {
         stage: "jev",
         jev_status: "ok",
         jev_distribution: { sev0: 0.05, sev1: 0.62, sev2: 0.21, noise: 0.04 },
+        jev_latency_ms: 412,
       },
-      { packet_id: packet.packet_id, step: "judge", stage: "judging" },
+      { packet_id: packet.packet_id, step: "judge", stage: "judging", llama_latency_ms: 1840 },
     ]);
   });
 
