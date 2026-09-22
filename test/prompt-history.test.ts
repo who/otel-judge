@@ -1,10 +1,10 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { sanitize, verifySanitized, groupByBead, renderMarkdown, main, collectLogEntries } from '../scripts/prompt-history.mjs';
+import { sanitize, verifySanitized, groupByBead, renderMarkdown, main, collectLogEntries, COMPACT_INSTRUCTIONS } from '../scripts/prompt-history.mjs';
 
 const roots: string[] = [];
 async function fixture() {
@@ -122,5 +122,90 @@ describe('grouping', () => {
   it('refuses an id quoted from another workspace', () => {
     expect([...groupByBead(entries('other-project-abc.2 mentioned in passing'), 'otel-judge').keys()])
       .toEqual(['unattributed']);
+  });
+});
+
+describe('llm-compact', () => {
+  const starter = 'Read AGENTS.md first. One window, one issue.';
+  async function corpus() {
+    const root = await fixture();
+    await writeFile(path.join(root, 'logs', 'a.log'),
+      `[2026-09-20 12:00:00] alpha-123 ${starter}\n[2026-09-20 12:01:00] alpha-123 implemented the parser\n`);
+    await writeFile(path.join(root, 'logs', 'b.log'),
+      `[2026-09-21 12:00:00] alpha-456 ${starter}\n[2026-09-21 12:01:00] alpha-456 fixed the test\n`);
+    return root;
+  }
+  // A stand-in for the model: names the starter it saw and narrates the rest.
+  const requests: { section: string; part: number; of: number; entries: { text: string }[] }[] = [];
+  const backend = async (instructions: string, payload: string) => {
+    expect(instructions).toBe(COMPACT_INSTRUCTIONS);
+    const request = JSON.parse(payload);
+    requests.push(request);
+    const seen = request.entries.map((entry: { text: string }) => entry.text).find((text: string) => text.includes(starter));
+    const markdown = `## Summary\n\nSession-start prompt (listed once at the top)\n\nThen: ${request.entries.at(-1).text}`;
+    return '```json\n' + JSON.stringify({ starters: [seen.slice(seen.indexOf('Read'))], markdown }) + '\n```';
+  };
+  afterEach(() => { requests.splice(0); vi.restoreAllMocks(); });
+
+  it('replaces the document with compact sections and lists each session starter once at the top', async () => {
+    const root = await corpus();
+    await main(['--llm-compact', '--prefix', 'alpha'], root, { backend });
+    const output = await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8');
+    expect(output.startsWith('# Prompt history\n\nGenerated: ')).toBe(true);
+    expect(output.indexOf('## Session-start prompts')).toBeLessThan(output.indexOf('## alpha-123'));
+    expect(output).toContain('recur throughout the sections below');
+    expect(output.match(new RegExp(starter.replace(/[.]/g, '\\.'), 'g'))).toHaveLength(1);
+    expect(output).toContain('> Read AGENTS.md first.');
+    expect(output).toContain('Then: [2026-09-21 12:01:00] alpha-456 fixed the test');
+    expect(output).not.toContain('<!-- entry');
+    // The skeleton belongs to the script: a model heading at document level is demoted.
+    expect(output).not.toMatch(/^## Summary$/m);
+    expect(output).toMatch(/^### Summary$/m);
+    expect(requests.map((request) => [request.section, request.part, request.of])).toEqual([['alpha-123', 1, 1], ['alpha-456', 1, 1]]);
+  });
+
+  it('prints the compact document under --dry-run without writing', async () => {
+    const root = await corpus();
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    await main(['--llm-compact', '--dry-run', '--prefix', 'alpha'], root, { backend });
+    expect(String(write.mock.calls[0][0])).toContain('## Session-start prompts');
+    await expect(readFile(path.join(root, 'PROMPT_HISTORY.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('renders empty logs without calling the backend', async () => {
+    const root = await fixture();
+    await main(['--llm-compact'], root, { backend });
+    const output = await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8');
+    expect(output).toContain('## Session-start prompts');
+    expect(output).toContain('None identified.');
+    expect(output).toContain('No log entries found.');
+    expect(requests).toHaveLength(0);
+  });
+
+  it('refuses --append together with --llm-compact', async () => {
+    const root = await corpus();
+    await expect(main(['--append', '--llm-compact'], root, { backend })).rejects.toThrow('Cannot combine --append with --llm-compact');
+    await expect(readFile(path.join(root, 'PROMPT_HISTORY.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('fails closed on a reply outside the contract', async () => {
+    const root = await corpus();
+    await expect(main(['--llm-compact', '--prefix', 'alpha'], root, { backend: async () => 'Here is your summary.' }))
+      .rejects.toThrow('Compact output rejected: reply is not a JSON object');
+    await expect(main(['--llm-compact', '--prefix', 'alpha'], root, { backend: async () => JSON.stringify({ starters: [], markdown: '' }) }))
+      .rejects.toThrow('Compact output rejected: reply does not carry starters and markdown');
+    await expect(main(['--llm-compact', '--prefix', 'alpha'], root, { backend: async () => JSON.stringify({ starters: [], markdown: '<!-- entry {} -->\n> raw' }) }))
+      .rejects.toThrow('Compact output rejected: reply reproduces raw entries');
+    await expect(main(['--llm-compact', '--prefix', 'alpha'], root, { backend: async () => { throw new Error('Compact backend failed: exit 1'); } }))
+      .rejects.toThrow('Compact backend failed: exit 1');
+    await expect(readFile(path.join(root, 'PROMPT_HISTORY.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('llm-compact-unsafe: verifies the compact output and keeps the previous file when it fails', async () => {
+    const root = await corpus();
+    await writeFile(path.join(root, 'PROMPT_HISTORY.md'), 'existing');
+    const unsafe = async () => JSON.stringify({ starters: [], markdown: 'fine line\napi_key=[redacted] token=survivor' });
+    await expect(main(['--llm-compact', '--prefix', 'alpha'], root, { backend: unsafe })).rejects.toThrow('Unsafe content at compact output:');
+    expect(await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8')).toBe('existing');
   });
 });
