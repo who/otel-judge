@@ -1,5 +1,6 @@
 import { routeAgentRequest } from "agents";
 import { handleIngest, INGEST_PATH } from "../ingress/ingest";
+import { handleOtlpIngest, OTLP_INGEST_PATH } from "../ingress/otlp";
 import { corsHeaders, handlePreflight } from "./cors";
 import { jsonError } from "./errors";
 import { enforceBodyLimit } from "./limits";
@@ -57,6 +58,14 @@ export async function handleRequest(
   // below rebuilds the request around a decoded copy for the SDK router.
   if (url.pathname === INGEST_PATH && request.method === "POST") {
     return withHeaders(await handleIngest(request, env), cors);
+  }
+
+  // The OTLP dialect of the same door, kept behind its own path so that the
+  // normalized contract stays the thing the Agent is reached through. Deleting
+  // this branch and the module it calls removes collector support and nothing
+  // else, which is the portability claim stated as code.
+  if (url.pathname === OTLP_INGEST_PATH && request.method === "POST") {
+    return withHeaders(await handleOtlpIngest(request, env), cors);
   }
 
   // A WebSocket upgrade carries no body to buffer and must reach the Agent

@@ -1,0 +1,77 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "checkout" } },
+          { "key": "service.version", "value": { "stringValue": "checkout@2026.09.21-4" } },
+          { "key": "deployment.environment", "value": { "stringValue": "production" } },
+          { "key": "cloud.region", "value": { "stringValue": "us-east-1" } }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": { "name": "checkout.http.server", "version": "1.4.0" },
+          "metrics": [
+            {
+              "name": "http.server.request.count",
+              "description": "Requests handled, split by route and failure class",
+              "unit": "{request}",
+              "sum": {
+                "aggregationTemporality": 1,
+                "isMonotonic": true,
+                "dataPoints": [
+                  {
+                    "startTimeUnixNano": "1789984800000000000",
+                    "timeUnixNano": "1789985100000000000",
+                    "asInt": "9100",
+                    "attributes": [
+                      { "key": "http.route", "value": { "stringValue": "/checkout/submit" } },
+                      { "key": "http.response.status_code", "value": { "intValue": "200" } }
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1789984800000000000",
+                    "timeUnixNano": "1789985100000000000",
+                    "asInt": "1820",
+                    "attributes": [
+                      { "key": "http.route", "value": { "stringValue": "/checkout/submit" } },
+                      { "key": "http.response.status_code", "value": { "intValue": "503" } },
+                      { "key": "error.type", "value": { "stringValue": "upstream_unavailable" } }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "http.server.request.duration",
+              "description": "Server-side request duration",
+              "unit": "ms",
+              "histogram": {
+                "aggregationTemporality": 1,
+                "dataPoints": [
+                  {
+                    "startTimeUnixNano": "1789984800000000000",
+                    "timeUnixNano": "1789985100000000000",
+                    "count": "10920",
+                    "sum": 6318400,
+                    "bucketCounts": ["120", "980", "3400", "2600", "1900", "1500", "400", "20"],
+                    "explicitBounds": [50, 100, 250, 500, 750, 1000, 2500],
+                    "attributes": [
+                      { "key": "http.route", "value": { "stringValue": "/checkout/submit" } }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "baselines": {
+    "error_rate": 0.004,
+    "p95_latency_ms": 240,
+    "slo_burn_rate": 8.7
+  }
+}

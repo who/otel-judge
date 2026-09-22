@@ -12,20 +12,24 @@ export const INGEST_PATH = "/ingest";
 export type IngestEnv = Env & FirehoseEnv;
 
 /**
- * The verified front door for packets.
+ * Bound the body and prove who sent it, before anything looks inside it.
  *
- * The order of the five steps below is the security property, not an
- * implementation detail. The body is bounded before it is held, verified before
- * it is parsed, and parsed before it is routed, so an unauthenticated caller
- * cannot make this Worker spend `JSON.parse` on bytes of its choosing and an
- * oversize body is dropped before any cryptography runs on it.
+ * The order of these two steps is the security property, not an implementation
+ * detail: the body is bounded before it is held and verified before it is
+ * parsed, so an unauthenticated caller cannot make this Worker spend
+ * `JSON.parse` on bytes of its choosing and an oversize body is dropped before
+ * any cryptography runs on it. Every dialect of the front door shares this
+ * function rather than its own copy, because a second copy is free to put the
+ * steps in the other order.
  *
- * Identity comes from `agentNameForPacket`, the function the Agent itself uses.
- * There is one derivation in the codebase on purpose: a second one here would
- * be free to disagree, and the packets it misrouted would sit in an instance
- * nothing ever addresses again.
+ * The raw text is returned on success — the exact bytes that were signed, which
+ * is what a signature is about — and the refusal is returned as the response
+ * the caller should send, so no dialect invents its own wording for 401 or 503.
  */
-export async function handleIngest(request: Request, env: IngestEnv): Promise<Response> {
+export async function readVerifiedBody(
+  request: Request,
+  env: IngestEnv,
+): Promise<string | Response> {
   const body = await enforceBodyLimit(request);
   if (body instanceof Response) return body;
 
@@ -46,6 +50,22 @@ export async function handleIngest(request: Request, env: IngestEnv): Promise<Re
       401,
     );
   }
+
+  return body;
+}
+
+/**
+ * The verified front door for packets.
+ *
+ * Verified before parsed, parsed before routed. Identity comes from
+ * `agentNameForPacket`, the function the Agent itself uses. There is one
+ * derivation in the codebase on purpose: a second one here would be free to
+ * disagree, and the packets it misrouted would sit in an instance nothing ever
+ * addresses again.
+ */
+export async function handleIngest(request: Request, env: IngestEnv): Promise<Response> {
+  const body = await readVerifiedBody(request, env);
+  if (body instanceof Response) return body;
 
   let payload: unknown;
   try {
