@@ -10,7 +10,19 @@ const NODE_TESTS = ["test/prompt-history.test.ts"];
 
 export default defineConfig({
   test: {
-    // Vitest 4 equivalent of the Workers pool's former singleWorker option.
+    // Vitest 4 equivalent of the Workers pool's former singleWorker option: one
+    // workerd for the whole run, every file in sequence.
+    //
+    // This was the first suspect when a whole-suite run failed one arbitrary
+    // case per pass with "Test timed out in 5000ms" — a shared instance keeps
+    // every Durable Object a suite created alive until the run ends. It is not
+    // the cause. A failing run's real wall time was the usual six seconds; the
+    // twenty seconds Vitest reported for the "slow" test was the system clock
+    // stepping forward under it and back again a test later, which inside
+    // workerd is the only clock Vitest has (`performance.now()` is
+    // `Date.now()`). Per-file isolation makes the same run three times slower
+    // and changes nothing about a clock step, so the shared worker stays and
+    // `test/setup/wall-clock.ts` names a step when one happens.
     maxWorkers: 1,
     projects: [
       {
@@ -29,6 +41,7 @@ export default defineConfig({
           name: "workers",
           include: ["test/**/*.test.ts"],
           exclude: [...configDefaults.exclude, ...NODE_TESTS],
+          setupFiles: ["test/setup/wall-clock.ts"],
           isolate: false,
         },
       },
