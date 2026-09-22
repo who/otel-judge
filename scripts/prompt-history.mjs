@@ -188,7 +188,7 @@ const COMPACT_CHUNK_CHARS = 240_000;
 export const COMPACT_INSTRUCTIONS = [
   'You are compacting one section of an AI-assisted coding prompt history for public disclosure.',
   'Standard input carries a JSON object: {"section","part","of","entries":[{"timestamp","file","line","text"}]}.',
-  'Each entry is one sanitized log line from an ortus grind run: orchestrator status lines, JSON events streamed by a coding agent (assistant text, tool calls, tool results), and the prompts the operator or orchestrator gave the agent.',
+  'Each entry is a pre-digested line from an ortus grind run: orchestrator status, assistant prose, tool-use names, and operator prompts. Tool-result payloads and hook noise are already omitted.',
   'Answer with one JSON object and nothing else, without a code fence: {"starters":[...],"markdown":"..."}.',
   '- "starters": the full text of every prompt in these entries that starts a session: the standing instruction a worker receives at launch, such as a goal prompt, session rules, or an issue-authoring contract. Copy each verbatim, once. They are collected and listed once at the top of the document.',
   '- "markdown": a compact, readable account of this part in GitHub Markdown: what was asked, what the agent decided, what it changed, what it verified, in order. Quote short prompt fragments where they carry the meaning. Where an entry is a session-start prompt, write the single line "Session-start prompt (listed once at the top)" instead of restating it. Leave out tool-result payloads, progress spinners, and repeated status lines. Use headings of level three or deeper only; the document supplies levels one and two. Never emit raw HTML comment lines that dump entry metadata JSON; narrate in prose instead.',
@@ -248,6 +248,64 @@ function chunkEntries(entries) {
  * hour of calls. Raw entry metadata is refused, because reproducing it is the
  * one thing the compact pass exists to stop.
  */
+
+/**
+ * Deterministic pre-digest: shrink grind JSON into what a disclosure needs.
+ *
+ * Ortus grind logs are mostly streamed agent JSON. Tool-result payloads and
+ * hook chatter dwarf the prompts and decisions; feeding them to the model is
+ * what makes compact calls echo raw entry dumps and burn context. This pass
+ * keeps status lines, assistant prose, and operator prompts, replaces tool
+ * results with a one-line stub, and strips any `<!-- entry … -->` blocks that
+ * leaked into a tool result when the agent read the generator or a prior
+ * PROMPT_HISTORY.md.
+ */
+export function digestEntryText(text) {
+  let body = text.replace(/<!--\s*entry[\s\S]*?-->/g, '[entry-metadata omitted]');
+  const stripped = body.replace(/^\[?\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d[^\]]*\]?\s*/, '');
+  const trimmed = stripped.trim();
+  if (!trimmed.startsWith('{')) return body.length > 4000 ? `${body.slice(0, 4000)} [cut]` : body;
+  let event;
+  try { event = JSON.parse(trimmed); } catch { return body.length > 4000 ? `${body.slice(0, 4000)} [cut]` : body; }
+  if (!event || typeof event !== 'object') return body.length > 4000 ? `${body.slice(0, 4000)} [cut]` : body;
+  const type = event.type;
+  if (type === 'system' || type === 'progress' || event.subtype === 'hook_started' || event.subtype === 'hook_response') {
+    return `[${type || 'system'}${event.subtype ? `/${event.subtype}` : ''} omitted]`;
+  }
+  if (type === 'assistant' && event.message?.content) {
+    const parts = [];
+    for (const block of event.message.content) {
+      if (block?.type === 'text' && typeof block.text === 'string') parts.push(block.text);
+      else if (block?.type === 'tool_use') parts.push(`[tool_use ${block.name || 'unknown'}]`);
+    }
+    const joined = parts.join('\n').trim();
+    return joined ? joined.slice(0, 12000) : '[assistant: empty]';
+  }
+  if (type === 'user' && event.message?.content) {
+    const parts = [];
+    for (const block of Array.isArray(event.message.content) ? event.message.content : [event.message.content]) {
+      if (typeof block === 'string') parts.push(block);
+      else if (block?.type === 'text' && typeof block.text === 'string') parts.push(block.text);
+      else if (block?.type === 'tool_result') {
+        const n = typeof block.content === 'string' ? block.content.length
+          : Array.isArray(block.content) ? JSON.stringify(block.content).length : 0;
+        parts.push(`[tool_result omitted: ${n} chars]`);
+      }
+    }
+    const joined = parts.join('\n').trim();
+    return joined ? joined.slice(0, 12000) : '[user: empty]';
+  }
+  if (type === 'result' || type === 'error') {
+    const summary = event.result || event.error || event.message || type;
+    return String(summary).slice(0, 2000);
+  }
+  return `[${type || 'event'} omitted]`;
+}
+
+export function digestEntries(entries) {
+  return entries.map((entry) => ({ ...entry, text: digestEntryText(entry.text) }));
+}
+
 function parseCompactReply(reply) {
   const body = reply.trim().replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
   let parsed;
@@ -257,15 +315,17 @@ function parseCompactReply(reply) {
       || typeof parsed.markdown !== 'string' || !parsed.markdown.trim()) {
     throw new Error('Compact output rejected: reply does not carry starters and markdown');
   }
-  // Refuse the raw dump shape (metadata comment + JSON payload), not prose that
-  // names the marker. Bead work on the generator itself legitimately discusses
-  // `<!-- entry` without reproducing the transcript format.
-  if (/<!--\s*entry\s*\{/.test(parsed.markdown) || /^<!--\s*entry\s/m.test(parsed.markdown)) {
-    throw new Error('Compact output rejected: reply reproduces raw entries');
-  }
+  // Strip raw dump lines/blocks. Hard-fail only when nothing usable remains.
+  let markdown = parsed.markdown
+    .replace(/<!--\s*entry\s*\{[\s\S]*?-->/g, '')
+    .split('\n')
+    .filter((line) => !/^<!--\s*entry\b/.test(line))
+    .join('\n')
+    .trim();
+  if (!markdown) throw new Error('Compact output rejected: reply reproduces raw entries');
   return {
     starters: parsed.starters,
-    markdown: parsed.markdown.trim().replace(/^(#{1,2})(?=\s)/gm, '###'),
+    markdown: markdown.replace(/^(#{1,2})(?=\s)/gm, '###'),
   };
 }
 
@@ -283,7 +343,7 @@ export async function compactGroups(groups, backend = claudeBackend, now = new D
   const sections = [];
   let count = 0;
   for (const [id, entries] of sortedSections(groups)) {
-    const ordered = orderedUnique(entries);
+    const ordered = digestEntries(orderedUnique(entries));
     count += ordered.length;
     const chunks = chunkEntries(ordered);
     const parts = [];

@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { sanitize, verifySanitized, groupByBead, renderMarkdown, main, collectLogEntries, COMPACT_INSTRUCTIONS } from '../scripts/prompt-history.mjs';
+import { sanitize, verifySanitized, groupByBead, renderMarkdown, main, collectLogEntries, COMPACT_INSTRUCTIONS, digestEntryText} from '../scripts/prompt-history.mjs';
 
 const roots: string[] = [];
 async function fixture() {
@@ -194,11 +194,25 @@ describe('llm-compact', () => {
       .rejects.toThrow('Compact output rejected: reply is not a JSON object');
     await expect(main(['--llm-compact', '--prefix', 'alpha'], root, { backend: async () => JSON.stringify({ starters: [], markdown: '' }) }))
       .rejects.toThrow('Compact output rejected: reply does not carry starters and markdown');
-    await expect(main(['--llm-compact', '--prefix', 'alpha'], root, { backend: async () => JSON.stringify({ starters: [], markdown: '<!-- entry {} -->\n> raw' }) }))
+    await expect(main(['--llm-compact', '--prefix', 'alpha'], root, { backend: async () => JSON.stringify({ starters: [], markdown: '<!-- entry {} -->' }) }))
       .rejects.toThrow('Compact output rejected: reply reproduces raw entries');
     await expect(main(['--llm-compact', '--prefix', 'alpha'], root, { backend: async () => { throw new Error('Compact backend failed: exit 1'); } }))
       .rejects.toThrow('Compact backend failed: exit 1');
     await expect(readFile(path.join(root, 'PROMPT_HISTORY.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('strips raw entry dumps from an otherwise valid compact reply', async () => {
+    const root = await corpus();
+    await main(['--llm-compact', '--prefix', 'alpha'], root, {
+      backend: async () => JSON.stringify({
+        starters: [],
+        markdown: 'Implemented the parser.\n<!-- entry {"x":1} -->\nVerified tests.',
+      }),
+    });
+    const output = await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8');
+    expect(output).toContain('Implemented the parser');
+    expect(output).toContain('Verified tests');
+    expect(output).not.toMatch(/<!--\s*entry\s*\{/);
   });
 
   it('allows compact prose that names the entry marker without dumping raw entries', async () => {
@@ -220,5 +234,27 @@ describe('llm-compact', () => {
     const unsafe = async () => JSON.stringify({ starters: [], markdown: 'fine line\napi_key=[redacted] token=survivor' });
     await expect(main(['--llm-compact', '--prefix', 'alpha'], root, { backend: unsafe })).rejects.toThrow('Unsafe content at compact output:');
     expect(await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8')).toBe('existing');
+  });
+});
+
+describe('digestEntryText', () => {
+  it('keeps assistant prose and stubs tool results', () => {
+    const assistant = JSON.stringify({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'I will fix the parser' }, { type: 'tool_use', name: 'Edit' }] },
+    });
+    expect(digestEntryText(assistant)).toContain('I will fix the parser');
+    expect(digestEntryText(assistant)).toContain('[tool_use Edit]');
+    const toolResult = JSON.stringify({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', content: '<!-- entry {"a":1} -->\n' + 'x'.repeat(5000) }] },
+    });
+    const digested = digestEntryText(toolResult);
+    expect(digested).toMatch(/tool_result omitted/);
+    expect(digested).not.toContain('<!-- entry');
+  });
+
+  it('passes status lines through', () => {
+    expect(digestEntryText('[2026-09-21 12:00:00] worker claimed otel-judge-4i3.1')).toContain('worker claimed');
   });
 });
