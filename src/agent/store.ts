@@ -273,6 +273,22 @@ export function hasPacket(sql: SqlTag, packetId: string): boolean {
 }
 
 /**
+ * How far the stored copy of this packet has got, or null when there is none.
+ *
+ * A producer that resends an id is told what the first copy is doing rather
+ * than only that the id was taken, which is the difference between "your retry
+ * was unnecessary" and "your packet is still being judged". This is one primary
+ * key read rather than the whole record: the duplicate branch is on the accept
+ * path and has no business assembling verdicts and labels to answer with a word.
+ */
+export function getPacketStatus(sql: SqlTag, packetId: string): PacketStatus | null {
+  const rows = sql<{ status: string }>`
+    SELECT status FROM packets WHERE packet_id = ${packetId}`;
+  const row = rows[0];
+  return row === undefined ? null : (row.status as PacketStatus);
+}
+
+/**
  * Record how a System One call went, replacing any earlier attempt.
  *
  * A workflow that retries after a partial failure records the run again, and an

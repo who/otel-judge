@@ -1,7 +1,9 @@
+import { MAX_BODY_BYTES } from "../packet/limits";
 import { jsonError } from "./errors";
 
-/** 128 KiB. A packet larger than this is a producer bug or an attack, never real telemetry. */
-export const MAX_BODY_BYTES = 131072;
+// The door's callers keep importing their limit from the door, while the number
+// itself lives with the packet contract that the Agent also enforces.
+export { MAX_BODY_BYTES };
 
 function tooLarge(): Response {
   return jsonError(
