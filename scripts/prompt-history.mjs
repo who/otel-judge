@@ -113,11 +113,23 @@ export async function* collectLogEntries(dir) {
   }
 }
 
-export function groupByBead(entries) {
+/**
+ * File each entry under every bead id it names, and the rest under one fallback.
+ *
+ * The workspace prefix is supplied rather than inferred. A pattern loose enough
+ * to recognise any workspace's ids also recognises `top-level`, `re-read` and
+ * `claude-opus`, so a corpus of ordinary English turned into hundreds of
+ * sections, each carrying its own copy of every entry that happened to use the
+ * word; the duplication alone put the document past the longest string the
+ * runtime can hold. Anchoring to one prefix is what keeps a section an
+ * attribution rather than a concordance.
+ */
+export function groupByBead(entries, prefix) {
+  // Prefixes may themselves contain hyphens; child issue suffixes are numeric.
+  const idPattern = new RegExp(`\\b${escapeRegex(prefix)}-[a-z0-9]{3,8}(?:\\.\\d+)*\\b`, 'g');
   const groups = new Map();
   for (const entry of entries) {
-    // Prefixes may themselves contain hyphens; child issue suffixes are numeric.
-    const ids = [...new Set(entry.text.match(/\b[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*-[a-z0-9]{3,8}(?:\.\d+)*\b/g) ?? ['unattributed'])];
+    const ids = [...new Set(entry.text.match(idPattern) ?? ['unattributed'])];
     for (const id of ids) {
       if (!groups.has(id)) groups.set(id, []);
       groups.get(id).push(entry);
@@ -143,7 +155,7 @@ export function renderMarkdown(groups, now = new Date()) {
   return output;
 }
 
-function parseExisting(text) {
+function parseExisting(text, prefix) {
   if (!text.startsWith('# Prompt history\n\nGenerated: ')) throw new Error('Unrecognized append document');
   const entries = [];
   for (const match of text.matchAll(/^<!-- entry (.*) -->$/gm)) {
@@ -156,33 +168,37 @@ function parseExisting(text) {
   }
   // Reject edits or unsupported documents rather than silently discarding content.
   const timestamp = text.match(/^Generated: (.+)$/m)?.[1];
-  if (renderMarkdown(groupByBead(entries), new Date(timestamp)) !== text) {
+  if (renderMarkdown(groupByBead(entries, prefix), new Date(timestamp)) !== text) {
     throw new Error('Append document differs from generated format');
   }
   return entries;
 }
 
 export async function main(args = process.argv.slice(2), repoRoot = process.cwd()) {
+  // bd derives its own prefix from the repository directory name, so the default
+  // agrees with the ids the logs actually carry without being told.
   let logs = 'logs', out = 'PROMPT_HISTORY.md', append = false, dryRun = false;
+  let prefix = path.basename(path.resolve(repoRoot));
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--help') {
-      console.log('Usage: node scripts/prompt-history.mjs [--logs <dir>] [--out <path>] [--append] [--dry-run]\nDefaults: --logs logs/ --out PROMPT_HISTORY.md');
+      console.log('Usage: node scripts/prompt-history.mjs [--logs <dir>] [--out <path>] [--prefix <prefix>] [--append] [--dry-run]\nDefaults: --logs logs/ --out PROMPT_HISTORY.md --prefix <repository directory name>');
       return;
     }
     if (arg === '--append') append = true;
     else if (arg === '--dry-run') dryRun = true;
-    else if (arg === '--logs' || arg === '--out') {
+    else if (arg === '--logs' || arg === '--out' || arg === '--prefix') {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`Missing value for ${arg}`);
       if (arg === '--logs') logs = value;
-      else out = value;
+      else if (arg === '--out') out = value;
+      else prefix = value;
     } else throw new Error('Unknown argument; use --help');
   }
   const destination = path.resolve(repoRoot, out);
   const entries = [];
   if (append) {
-    try { entries.push(...parseExisting(await readFile(destination, 'utf8'))); }
+    try { entries.push(...parseExisting(await readFile(destination, 'utf8'), prefix)); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   for await (const entry of collectLogEntries(path.resolve(repoRoot, logs))) entries.push({
@@ -192,7 +208,7 @@ export async function main(args = process.argv.slice(2), repoRoot = process.cwd(
     verifySanitized(entry.text, entry.file, entry.line);
     verifySanitized(entry.file, 'log filename', entry.line);
   }
-  const document = renderMarkdown(groupByBead(entries));
+  const document = renderMarkdown(groupByBead(entries, prefix));
   if (dryRun) { process.stdout.write(document); return; }
   // Delay all output writes until collection and verification have succeeded.
   const temporary = `${destination}.${process.pid}.tmp`;

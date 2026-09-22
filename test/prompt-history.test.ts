@@ -35,8 +35,10 @@ describe('sanitize', () => {
     const entries = [];
     for await (const entry of collectLogEntries(path.join(root, 'logs'))) entries.push(entry);
     expect(entries.map(entry => entry.file)).toEqual(['a.log', 'b.log']);
-    await main([], root);
-    await main(['--append'], root);
+    // The fixture root is a temporary directory, so its name is not the prefix
+    // these ids carry; append round-trips only under the prefix that wrote it.
+    await main(['--prefix', 'alpha'], root);
+    await main(['--append', '--prefix', 'alpha'], root);
     const output = await readFile(path.join(root, 'PROMPT_HISTORY.md'), 'utf8');
     expect(output.match(/^## alpha-123$/gm)).toHaveLength(1);
     expect(output.match(/^<!-- entry /gm)).toHaveLength(2);
@@ -98,10 +100,27 @@ describe('false positives', () => {
 });
 
 describe('grouping', () => {
-  it('accepts different prefixes, child ids and unattributed lines', () => {
-    const entries = ['alpha-123 first', 'other-project-abc.2 second', 'ordinary words'].map((text, i) => ({ text, file: 'run.log', line: i + 1, timestamp: '' }));
-    const groups = groupByBead(entries);
-    expect([...groups.keys()]).toEqual(['alpha-123', 'other-project-abc.2', 'unattributed']);
+  const entries = (...texts) => texts.map((text, i) => ({ text, file: 'run.log', line: i + 1, timestamp: '' }));
+
+  it('keeps child ids and files the rest under the fallback', () => {
+    const groups = groupByBead(entries('otel-judge-4i3.2 first', 'otel-judge-h3c second', 'ordinary words'), 'otel-judge');
+    expect([...groups.keys()]).toEqual(['otel-judge-4i3.2', 'otel-judge-h3c', 'unattributed']);
     expect(renderMarkdown(groups)).toContain('ordinary words');
+  });
+
+  it('reads one corpus differently under each prefix', () => {
+    const corpus = entries('alpha-123 first', 'other-project-abc.2 second');
+    expect([...groupByBead(corpus, 'alpha').keys()]).toEqual(['alpha-123', 'unattributed']);
+    expect([...groupByBead(corpus, 'other-project').keys()]).toEqual(['unattributed', 'other-project-abc.2']);
+  });
+
+  it('refuses a section named after a hyphenated ordinary word', () => {
+    expect([...groupByBead(entries('re-read the top-level claude-opus notes'), 'otel-judge').keys()])
+      .toEqual(['unattributed']);
+  });
+
+  it('refuses an id quoted from another workspace', () => {
+    expect([...groupByBead(entries('other-project-abc.2 mentioned in passing'), 'otel-judge').keys()])
+      .toEqual(['unattributed']);
   });
 });
