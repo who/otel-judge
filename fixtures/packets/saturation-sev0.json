@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "packet_id": "fix-saturation-sev0-001",
+  "service": "payments",
+  "env": "prod",
+  "window": {
+    "start": "2026-01-14T14:10:00Z",
+    "end": "2026-01-14T14:15:00Z"
+  },
+  "signals": {
+    "error_rate": 0.47,
+    "error_rate_baseline": 0.006,
+    "p95_latency_ms": 4200,
+    "p95_latency_baseline_ms": 260,
+    "request_rate_rps": 611.0,
+    "slo_burn_rate": 14.2,
+    "saturation": {
+      "cpu_pct": 97,
+      "queue_depth": 8400
+    }
+  },
+  "top_spans": [
+    {
+      "name": "payments.authorize",
+      "count": 183300,
+      "error_count": 86151,
+      "p95_ms": 4200
+    },
+    {
+      "name": "ledger.write",
+      "count": 97060,
+      "error_count": 40216,
+      "p95_ms": 3810
+    },
+    {
+      "name": "risk.score",
+      "count": 183300,
+      "error_count": 92,
+      "p95_ms": 240
+    }
+  ],
+  "exemplar_trace_ids": [
+    "1a2b3c4d5e6f708192a3b4c5d6e7f809",
+    "90a1b2c3d4e5f60718293a4b5c6d7e8f",
+    "5e6f708192a3b4c5d6e7f8091a2b3c4d"
+  ],
+  "alert_labels": ["payments", "queue-backlog", "sev0"],
+  "log_snippets": [
+    "worker pool exhausted: 8400 authorizations queued, oldest waiting 38s",
+    "ledger.write timed out after 5000ms; connection pool at 100 percent for 214s"
+  ]
+}

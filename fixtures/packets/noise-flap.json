@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "packet_id": "fix-noise-flap-001",
+  "service": "search",
+  "env": "prod",
+  "window": {
+    "start": "2026-01-14T11:00:00Z",
+    "end": "2026-01-14T11:05:00Z"
+  },
+  "signals": {
+    "error_rate": 0.012,
+    "error_rate_baseline": 0.009,
+    "p95_latency_ms": 322,
+    "p95_latency_baseline_ms": 300,
+    "request_rate_rps": 148.2,
+    "slo_burn_rate": 0.6
+  },
+  "top_spans": [
+    {
+      "name": "GET /search",
+      "count": 44460,
+      "error_count": 534,
+      "p95_ms": 322
+    },
+    {
+      "name": "index.query",
+      "count": 44460,
+      "error_count": 21,
+      "p95_ms": 118
+    }
+  ],
+  "exemplar_trace_ids": ["c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4"],
+  "alert_labels": ["sev2-flapping"],
+  "log_snippets": [
+    "search-error-rate alert fired and resolved 6 times in the last hour",
+    "upstream index shard 3 refused 21 queries during rebalance, retried successfully"
+  ]
+}
