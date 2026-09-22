@@ -90,16 +90,23 @@ describe("direct requests", () => {
     });
   });
 
-  it("answers a POST with a JSON 501 until the accept path lands", async () => {
+  it("answers a POST it cannot accept with a JSON 400 and the error list", async () => {
+    // An empty object is valid JSON, so this deliberately takes the validation
+    // branch rather than the parse-failure one: the first thing validation
+    // checks is the schema version, and an object without one is turned away
+    // under that code. Nothing is stored for a rejected packet, so sharing the
+    // default name with the 405 case leaves no state behind for either.
     const response = await SELF.fetch(
       `https://judge.test/agents/otel-judge-agent/${DEFAULT_AGENT_NAME}`,
       { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
     );
 
-    expect(response.status).toBe(501);
-    expect(await response.json()).toEqual({
-      error: "not_implemented",
-      message: expect.any(String),
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body).toEqual({
+      error: "unsupported_schema_version",
+      errors: expect.arrayContaining([expect.stringMatching(/^schema_version: /)]),
     });
+    expect(body.errors.length).toBeGreaterThan(0);
   });
 });
