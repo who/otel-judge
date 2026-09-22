@@ -184,7 +184,10 @@ Re-run `npx wrangler types` after changing `wrangler.jsonc`.
 - The packet producer and chaos generator — a separate repository.
 - A Slack adapter. The drop-into-Slack test is the design constraint: deleting
   the OTLP adapter and adding a Slack channel must change only door wiring, never
-  the Agent class. Nothing under `src/agent/` imports a channel.
+  the Agent class. Nothing under `src/agent/` imports a channel, and
+  `test/portability.test.ts` fails the build if anything ever does.
+  [`docs/CHANNELS.md`](docs/CHANNELS.md) writes that swap out as a concrete
+  add-and-delete file list, and states what a channel may not do.
 - TypeSafe and Workers AI as products; this is an integration against both.
 
 ## Links
@@ -193,5 +196,7 @@ Re-run `npx wrangler types` after changing `wrangler.jsonc`.
   published at <https://who.github.io/otel-judge-demo/>. It is maintained on its
   own lifecycle and may lag this repository.
 - **Requirements:** [`prd/PRD.md`](prd/PRD.md) — normative.
+- **Channel procedure:** [`docs/CHANNELS.md`](docs/CHANNELS.md) — how a channel
+  is swapped, and the import boundary that keeps the Agent out of it.
 - **Decision history:** [`docs/DESIGN.md`](docs/DESIGN.md) — why, not what. Where
   the two disagree, the PRD wins.
