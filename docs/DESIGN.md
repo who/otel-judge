@@ -23,7 +23,7 @@ Recorded here so the decision path stays auditable. Normative requirements live 
 5. **UI:** light-mode product demo on GitHub Pages; not Factorio-branded; not HN chrome.  
 6. **Prompt history:** raw Ortus logs gitignored; PRD ship gate publishes sanitized `PROMPT_HISTORY.md`.  
 7. **CF docs fit:** webhook/telemetry Agent + AgentWorkflow evaluate pipeline; Worker/Agent are sibling runtimes.  
-8. **Diamond lock:** full Jev distributions to Llama; no hard confidence / needs_human gates.
+8. **Diamond lock (revised 2026-09-22):** full Jev distributions to Llama as the priors its verdict is grounded in; Llama waits for a successful Jev and is not asked at all when System One never answered; a departure from a noise-leaning prior must set `disagrees_with_prior` and cite the summary; no hard confidence / needs_human gates. The earlier lock let a Jev failure log-and-continue into Llama, which produced a flag on a packet System One had called noise.
 
 ---
 

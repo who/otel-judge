@@ -119,16 +119,26 @@ export function persistEvaluation(
   // Written even when the list is empty: replacing the answers is how a retry
   // stops an earlier attempt's distributions from sitting beside this one's.
   recordJevAnswers(sql, packetId, toAnswerRows(result, createdAt));
+
+  // A run that stopped at System One has no verdict, and writing a row for the
+  // judgement nobody made would put a severity in history that no model graded.
+  // The run row above is the whole account of what happened to this packet.
+  const judged = result.verdict;
+  if (judged === undefined) {
+    setPacketStatus(sql, packetId, "failed");
+    return "persisted";
+  }
+
   recordVerdict(sql, packetId, {
-    severity: result.verdict.verdict.severity,
-    summary: result.verdict.verdict.summary,
-    critique: result.verdict.verdict.critique,
-    next_action: result.verdict.verdict.next_action,
-    disagrees_with_prior: result.verdict.verdict.disagrees_with_prior,
-    model: result.verdict.model,
+    severity: judged.verdict.severity,
+    summary: judged.verdict.summary,
+    critique: judged.verdict.critique,
+    next_action: judged.verdict.next_action,
+    disagrees_with_prior: judged.verdict.disagrees_with_prior,
+    model: judged.model,
     // The reply exactly as it arrived, which is what keeps the reasoning trail
     // readable after the parser has smoothed it into columns.
-    raw: result.verdict.verdict.raw,
+    raw: judged.verdict.raw,
     created_at: createdAt,
   });
   setPacketStatus(sql, packetId, "complete");
@@ -162,12 +172,27 @@ export function terminalState(
   }
 
   const { result } = outcome;
+  const judged = result.verdict;
+
+  // A run that never reached System Two publishes the failed stage and leaves
+  // `last_verdict` alone, for the same reason a failed run does: the board goes
+  // on showing the last packet actually judged rather than blanking on one that
+  // nobody graded.
+  if (judged === undefined) {
+    return {
+      stage: "failed",
+      last_packet_id: result.packet_id,
+      jev_status: jevStateStatus(result.jev),
+      updated_at: updatedAt,
+    } satisfies Partial<JudgeState>;
+  }
+
   return {
     stage: "complete",
     last_packet_id: result.packet_id,
     last_verdict: {
-      severity: result.verdict.verdict.severity,
-      summary: result.verdict.verdict.summary,
+      severity: judged.verdict.severity,
+      summary: judged.verdict.summary,
     },
     jev_status: jevStateStatus(result.jev),
     updated_at: updatedAt,
@@ -191,9 +216,14 @@ export function readEvaluateResult(value: unknown): EvaluateResult | null {
   if (typeof candidate.packet_id !== "string" || candidate.packet_id === "") return null;
   if (typeof candidate.jev !== "object" || candidate.jev === null) return null;
 
+  // An evaluation that stopped at System One carries no verdict, and refusing it
+  // here would throw away the only account of a run that did happen. What is
+  // still refused is a verdict that is present and unreadable.
   const judged = candidate.verdict;
-  if (typeof judged !== "object" || judged === null) return null;
-  if (typeof judged.verdict !== "object" || judged.verdict === null) return null;
+  if (judged !== undefined) {
+    if (typeof judged !== "object" || judged === null) return null;
+    if (typeof judged.verdict !== "object" || judged.verdict === null) return null;
+  }
 
   return candidate as EvaluateResult;
 }

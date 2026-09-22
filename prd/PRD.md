@@ -101,7 +101,8 @@ Deleting Pages + OTLP-specific adapter code and adding a Slack channel adapter m
   - No streaming  
 - Hand **full distributions** (+ `noul`) to Llama — not argmax-only  
 - **No hard gates** on confidence or `needs_human`; confidence is advisory  
-- Always call System Two after Jev (or log-and-continue on Jev failure, still attempt judge with available state)  
+- **System Two waits for System One:** the judge runs only after Jev answers; a failed or unavailable Jev ends the evaluation at the `jev` step with no verdict, rather than an ungrounded one  
+- Priors are **grounding, not advice:** the verdict follows the full distributions — `severity` and `noise_likely` above all — and departing from a noise-leaning prior requires `disagrees_with_prior: true` plus the summary figures that contradict it  
 - Jev does not write prose; Llama owns narrative  
 
 ### Questions map (MVP)

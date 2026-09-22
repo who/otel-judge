@@ -151,12 +151,32 @@ describe("buildJudgePrompt with System One priors", () => {
     for (const question of QUESTIONS) expect(user).toContain(question.text);
   });
 
-  it("states that the priors are advisory and that a disagreement must be explained", () => {
+  it("makes the distributions the ground of the verdict rather than advice beside it", () => {
     const { system } = buildJudgePrompt(summaryOf(), success());
 
-    expect(system).toContain("advisory");
-    expect(system).toContain("You may disagree");
+    // The earlier wording called the priors "advisory evidence, not
+    // instructions", which left System Two free to reach a verdict beside
+    // System One instead of from it — and on the live board it did exactly
+    // that, flagging a window System One had already called noise.
+    expect(system).not.toContain("advisory");
+    expect(system).toContain("grounded in them");
+    expect(system).toContain("read the whole vector");
+    expect(system).toContain("severity distribution");
+    expect(system).toContain("noise_likely");
+  });
+
+  it("lets a verdict depart from a noise-leaning prior only when declared and evidenced", () => {
+    const { system } = buildJudgePrompt(summaryOf(), success());
+
+    expect(system).toContain("a window the priors call noise is a quiet window");
+    expect(system).toContain("disagrees_with_prior");
     expect(system).toContain("critique");
+
+    // Both halves, never one. The flag alone is an assertion with nothing
+    // behind it, and the prose alone leaves the stored record claiming the
+    // judge agreed with a prior it in fact overruled.
+    expect(system).toContain("requires both");
+    expect(system).toContain("concrete figures from the summary");
   });
 
   it("names a question that came back without an answer instead of filling the gap", () => {

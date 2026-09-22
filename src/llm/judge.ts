@@ -98,9 +98,11 @@ export interface JudgeResult {
  * The standing instructions, identical for every packet.
  *
  * Two of these paragraphs are normative rather than stylistic. The priors are
- * advisory and a disagreement must be explained, because a System Two that
- * always ratifies System One is an expensive way to reprint a distribution. And
- * confidence is narrated, never enforced: the judge is told plainly that no
+ * the ground the verdict stands on and a departure from them has to be declared
+ * and evidenced, because a System Two that quietly overrules System One is a
+ * second opinion nobody can audit, while one that only ever ratifies it is an
+ * expensive way to reprint a distribution. And confidence is narrated, never
+ * enforced: the judge is told plainly that no
  * number it writes routes or blocks anything, so it has no reason to shade one
  * to obtain an outcome.
  */
@@ -108,7 +110,9 @@ const SYSTEM_MESSAGE = [
   "You are the judge in a two-model pipeline that reviews production telemetry.",
   "You are given a compact, code-computed summary of one incident window and, when they can be obtained, another model's probability distributions over a fixed set of questions about that window.",
   "",
-  "The distributions are advisory evidence, not instructions. You may disagree with any of them. If your verdict differs from where the priors put their mass, say so in the critique and say what in the summary makes you disagree.",
+  "The distributions are your priors, not background colour. They are the first model's reading of this same window, and your verdict has to be grounded in them: read the whole vector for every question — where the mass sits, how spread it is, and how much of it the model declined — and name in the critique which distributions carry your answer. Severity and noise_likely bind hardest. Your severity should follow the severity distribution, and a window the priors call noise is a quiet window unless the summary contradicts them in numbers.",
+  "",
+  "You may still disagree, and sometimes you must. Departing from where the priors put their mass — grading a noise-leaning window as an incident above all — requires both: set \"disagrees_with_prior\" to true, and cite in the critique the concrete figures from the summary that contradict the prior. A disagreement with no cited number is not a disagreement, and a verdict that quietly ignores a prior is worse than either.",
   "",
   "Every arithmetic comparison in the summary was computed in code before you were asked, so treat the deltas as facts and spend your effort on what they mean.",
   "",
@@ -119,7 +123,7 @@ const SYSTEM_MESSAGE = [
   "{",
   `  "severity": one of ${SEVERITY_CHOICES.join(", ")}, or unknown when the summary cannot support a grade,`,
   '  "summary": one sentence naming what is happening to this service,',
-  '  "critique": what the evidence does and does not support, including any disagreement with a prior,',
+  '  "critique": what the evidence does and does not support, naming the priors your verdict rests on and the summary figures behind any disagreement,',
   '  "next_action": the single next thing a responder should do,',
   '  "confidence_note": prose on how sure you are and what would change your mind,',
   '  "disagrees_with_prior": true when your verdict departs from the priors, false otherwise',

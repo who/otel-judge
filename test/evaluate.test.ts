@@ -171,27 +171,31 @@ describe("runEvaluate", () => {
     ]);
   });
 
-  it("logs and continues to the judge when System One cannot be asked at all", async () => {
+  it("stops before the judge when System One cannot be asked at all", async () => {
     const step = new FakeStep();
     const unavailable: JevResult = { ok: false, retryable: false, reason: "missing_api_key" };
-    const { deps, judged } = recorder(async () => unavailable);
+    const { deps, judged, milestones } = recorder(async () => unavailable);
 
     const result = await runEvaluate(step, { packet: packetOf() }, deps);
 
     // One attempt, not three: the client has already decided that no number of
-    // tries configures a secret, and spending the budget only delays the judge.
+    // tries configures a secret, and there is no judge left downstream to delay.
     expect(step.calls.map((call) => ({ name: call.name, attempts: call.attempts }))).toEqual([
       { name: "summarize", attempts: 1 },
       { name: "jev", attempts: 1 },
-      { name: "judge", attempts: 1 },
     ]);
     expect(result.jev).toEqual(unavailable);
-    expect(result.verdict).toEqual(VERDICT);
     expect(result.failed_at).toBe("jev");
-    expect(judged[0]?.jev).toEqual(unavailable);
+
+    // No verdict and no call: System Two reasons from the priors, so a packet
+    // with none gets no opinion rather than an ungrounded one, and the run
+    // reports where it stopped instead of fabricating what it never obtained.
+    expect(result.verdict).toBeUndefined();
+    expect(judged).toHaveLength(0);
+    expect(milestones.map((milestone) => milestone.step)).toEqual(["summarize", "jev"]);
   });
 
-  it("logs and continues to the judge when System One exhausts its budget", async () => {
+  it("stops before the judge when System One exhausts its budget", async () => {
     const step = new FakeStep();
     const flaky: JevResult = { ok: false, retryable: true, reason: "timed out after 10000ms", status: 504 };
     const { deps, judged } = recorder(async () => flaky);
@@ -201,15 +205,17 @@ describe("runEvaluate", () => {
     const jevCall = step.calls.find((call) => call.name === "jev");
     expect(jevCall?.attempts).toBe(3);
 
-    // The run resolves rather than aborting, and the judge is told what went
-    // wrong rather than being handed an empty object to guess from.
+    // The run resolves rather than aborting, so the packet's history still says
+    // what was tried. A spent retry budget is a missing prior all the same, and
+    // nothing invents one to keep the judge busy.
     expect(result.jev).toEqual(flaky);
     expect(result.failed_at).toBe("jev");
-    expect(judged).toHaveLength(1);
-    expect(judged[0]?.jev).toEqual(flaky);
+    expect(result.verdict).toBeUndefined();
+    expect(judged).toHaveLength(0);
+    expect(step.calls.some((call) => call.name === "judge")).toBe(false);
   });
 
-  it("logs and continues with a readable reason when the System One step throws", async () => {
+  it("stops with a readable reason when the System One step throws", async () => {
     const step = new FakeStep();
     const { deps, judged } = recorder(async () => {
       throw new Error("socket hung up");
@@ -219,8 +225,8 @@ describe("runEvaluate", () => {
 
     expect(result.jev).toEqual({ ok: false, retryable: false, reason: "socket hung up" });
     expect(result.failed_at).toBe("jev");
-    expect(judged[0]?.jev).toEqual(result.jev);
-    expect(result.verdict).toEqual(VERDICT);
+    expect(result.verdict).toBeUndefined();
+    expect(judged).toHaveLength(0);
   });
 
   it("fails the workflow when the judge is still failing after its retries", async () => {

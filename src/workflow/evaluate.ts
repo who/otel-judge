@@ -14,7 +14,7 @@ import type { PacketSummary } from "./summarize";
  * `runEvaluate` rather than in the workflow class, because a `WorkflowEntrypoint`
  * subclass can only be exercised by starting a real workflow and the Workers test
  * pool offers no harness for that. A plain function taking the step as an argument
- * is drivable by a fake in a few lines, so the log-and-continue rule and the retry
+ * is drivable by a fake in a few lines, so the sequencing rule and the retry
  * policies are assertions rather than hopes. The class that binds the real
  * dependencies is deliberately too thin to hold a decision.
  */
@@ -134,15 +134,18 @@ export function milestoneState(
  * `verdict` is the judge's whole result rather than its verdict field alone,
  * because the model that answered is stored beside the prose and asking the
  * environment for it a second time would let a pin change between the call and
- * the row. `failed_at` names a step that failed without stopping the run — today
- * only `jev` can do that — so a reader can tell a degraded evaluation from a
- * clean one without re-deriving it from the union.
+ * the row. It is absent exactly when the judge was never asked: System Two
+ * grounds its verdict in System One's distributions, so a packet System One
+ * never answered for has no verdict rather than one reached without priors.
+ * `failed_at` names the step that ended the run early — today only `jev` can do
+ * that — so a reader can tell a degraded evaluation from a clean one without
+ * re-deriving it from the union.
  */
 export interface EvaluateResult {
   packet_id: string;
   summary: PacketSummary;
   jev: JevResult;
-  verdict: JudgeResult;
+  verdict?: JudgeResult;
   failed_at?: EvaluateStepName;
 }
 
@@ -150,8 +153,9 @@ export interface EvaluateResult {
  * The work the three steps actually do, supplied rather than imported.
  *
  * `onProgress` is optional and defaults to doing nothing, which is what lets the
- * orchestration run in isolation: a test asserting the log-and-continue rule
- * should not have to stand up a state broadcaster to say what it means.
+ * orchestration run in isolation: a test asserting that the judge is never asked
+ * without priors should not have to stand up a state broadcaster to say what it
+ * means.
  */
 export interface EvaluateDeps {
   summarize: (packet: Packet) => PacketSummary;
@@ -217,13 +221,15 @@ async function noProgress(): Promise<void> {}
 /**
  * Summarize, ask System One, judge — durably, and in that order.
  *
- * The one rule worth stating twice is that System One cannot fail this workflow.
- * A packet that reaches here is already stored and already acknowledged, and the
- * PRD's answer to an unreachable first model is to say so and judge anyway; a
- * rejected jev step is therefore caught, normalised, and handed to the judge as
- * evidence of its own. The judge is the opposite case: a verdict is the thing
- * this pipeline exists to produce, so once its retries are spent the failure
- * propagates and the run is failed rather than recorded as an opinion nobody gave.
+ * The one rule worth stating twice is that the judge is never asked without
+ * priors. System One still cannot fail this workflow: a packet that reaches here
+ * is already stored and already acknowledged, so a rejected jev step is caught
+ * and normalised rather than thrown. What it now ends is the evaluation. System
+ * Two reasons from System One's distributions, so a run whose first model never
+ * answered stops at `jev` and returns no verdict instead of an ungrounded one.
+ * The judge is the opposite case: a verdict is the thing this pipeline exists to
+ * produce, so once its retries are spent the failure propagates and the run is
+ * failed rather than recorded as an opinion nobody gave.
  *
  * Progress is reported after a step rather than before it, so a milestone is
  * always a claim about work that is durably done.
@@ -262,9 +268,14 @@ export async function runEvaluate(
     jev_status: jevStateStatus(jev),
   });
 
+  // System Two is not asked without System One's answers. A verdict reached from
+  // the summary alone is a second opinion with nothing to be second to, and the
+  // packet is better left ungraded than graded on evidence the pipeline promises
+  // to weigh and in this run never obtained.
+  if (!jev.ok) return { packet_id: packetId, summary, jev, failed_at: "jev" };
+
   const verdict = await step.do("judge", STEP_RETRIES.judge, async () => deps.judge(summary, jev));
   await report({ packet_id: packetId, step: "judge", stage: STEP_STAGES.judge });
 
-  const result: EvaluateResult = { packet_id: packetId, summary, jev, verdict };
-  return jev.ok ? result : { ...result, failed_at: "jev" };
+  return { packet_id: packetId, summary, jev, verdict };
 }
