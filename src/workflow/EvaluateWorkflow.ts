@@ -2,7 +2,12 @@ import { AgentWorkflow, type AgentWorkflowEvent, type AgentWorkflowStep } from "
 import type { OtelJudgeAgent } from "../agent/OtelJudgeAgent";
 import { callSystemOne } from "../jev/client";
 import { judgeWithLlama } from "../llm/judge";
-import { runEvaluate, type EvaluatePayload, type EvaluateResult } from "./evaluate";
+import {
+  milestoneState,
+  runEvaluate,
+  type EvaluatePayload,
+  type EvaluateResult,
+} from "./evaluate";
 import { summarizePacket } from "./summarize";
 
 /**
@@ -25,10 +30,22 @@ export class EvaluateWorkflow extends AgentWorkflow<OtelJudgeAgent, EvaluatePayl
     event: AgentWorkflowEvent<EvaluatePayload>,
     step: AgentWorkflowStep,
   ): Promise<EvaluateResult> {
-    return runEvaluate(step, event.payload, {
+    const result = await runEvaluate(step, event.payload, {
       summarize: summarizePacket,
       callSystemOne: (state) => callSystemOne(this.env, state),
       judge: (summary, jev) => judgeWithLlama(this.env, summary, jev),
+      // Merged rather than set, and durable rather than broadcast from here:
+      // the step wrapper records each merge as its own step, so a retried
+      // `judge` does not replay the summarize milestone at a watching client.
+      onProgress: (milestone) => step.mergeAgentState(milestoneState(milestone)),
     });
+
+    // Completion is not announced for us. Returning a value tells Workflows the
+    // run finished; it is this call that tells the Agent, and it has to happen
+    // before the return or an evaluation would be recorded nowhere a later read
+    // could find it. A failure needs no counterpart: the base class reports an
+    // unhandled error to the Agent on its way out.
+    await step.reportComplete(result);
+    return result;
   }
 }

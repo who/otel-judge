@@ -1,5 +1,6 @@
 import type { WorkflowStepConfig } from "cloudflare:workers";
-import type { Stage } from "../agent/state";
+import type { JudgeState, Stage } from "../agent/state";
+import { jevStateStatus } from "../jev/degraded";
 import type { SystemOneState } from "../jev/request";
 import type { JevFailure, JevResult } from "../jev/types";
 import type { JudgeResult } from "../llm/judge";
@@ -89,14 +90,42 @@ export interface EvaluatePayload {
 /**
  * One step boundary, reported as it is crossed.
  *
- * Small on purpose. The Agent-side implementation that merges a milestone into
- * published state arrives with the completion task; everything this module owes
- * it is which packet moved, which step moved it, and what to call the result.
+ * Small on purpose: which packet moved, which step moved it, and what to call
+ * the result. `jev_status` is the one exception and it rides only on the jev
+ * milestone, because whether priors exist is the fact a watching client most
+ * wants at that boundary and the alternative is making it wait for the verdict
+ * to learn that System One never answered. It is the coarse two-valued view, not
+ * the reason: the reason is an incident detail that belongs in SQL.
  */
 export interface EvaluateMilestone {
   packet_id: string;
   step: EvaluateStepName;
   stage: Stage;
+  jev_status?: "ok" | "unavailable";
+}
+
+/**
+ * The milestone as a partial snapshot, ready to merge into published state.
+ *
+ * A partial rather than a whole state because two packets can be in flight on
+ * one Agent: a full `setState` built from a stale read would quietly undo the
+ * other packet's progress, whereas merging three or four keys leaves whatever
+ * this milestone has no opinion about exactly as it was. Nothing derived from
+ * the summary, the distributions, or the prompts is in here, and there is no
+ * branch that could put one in: state is broadcast to every connected client.
+ */
+export function milestoneState(
+  milestone: EvaluateMilestone,
+  now: Date = new Date(),
+): Record<string, unknown> {
+  // Every merge refreshes `updated_at` so a client can tell a stage that was
+  // reasserted from one that has been sitting still.
+  return {
+    stage: milestone.stage,
+    last_packet_id: milestone.packet_id,
+    updated_at: now.toISOString(),
+    ...(milestone.jev_status === undefined ? {} : { jev_status: milestone.jev_status }),
+  } satisfies Partial<JudgeState>;
 }
 
 /**
@@ -226,7 +255,12 @@ export async function runEvaluate(
   } catch (error) {
     jev = toJevFailure(error);
   }
-  await report({ packet_id: packetId, step: "jev", stage: STEP_STAGES.jev });
+  await report({
+    packet_id: packetId,
+    step: "jev",
+    stage: STEP_STAGES.jev,
+    jev_status: jevStateStatus(jev),
+  });
 
   const verdict = await step.do("judge", STEP_RETRIES.judge, async () => deps.judge(summary, jev));
   await report({ packet_id: packetId, step: "judge", stage: STEP_STAGES.judge });

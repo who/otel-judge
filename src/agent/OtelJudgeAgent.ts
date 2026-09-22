@@ -2,8 +2,17 @@ import { Agent } from "agents";
 import type { Packet } from "../packet/types";
 import { acceptPacket, type AcceptOutcome } from "./accept";
 import { agentNameForPacket } from "./identity";
+import {
+  persistEvaluation,
+  readEvaluateResult,
+  terminalState,
+  type EvaluationOutcome,
+} from "./persist";
 import { INITIAL_STATE, type JudgeState } from "./state";
 import { countPackets, ensureSchema, sqlTag } from "./store";
+
+/** The workflow binding evaluation runs on, named once so the two uses cannot drift. */
+const EVALUATE_WORKFLOW = "EVALUATE_WORKFLOW";
 
 /**
  * Errors are JSON with a stable machine-readable code, never HTML: every caller
@@ -168,16 +177,92 @@ export class OtelJudgeAgent extends Agent<Env, JudgeState> {
   }
 
   /**
-   * The single place evaluation is started from. otel-judge-j74.4 owns the body.
+   * The single place evaluation is started from.
    *
-   * It exists now, empty, so that the accept path has exactly one thing to hand
-   * a packet to and the task that wires up the workflow changes a body instead
-   * of negotiating a new call site. Whatever goes in here may take as long as it
-   * likes and may fail: the packet is already durable and its outcome is
-   * readable from storage, so a failure is reported as the `failed` stage rather
-   * than by retracting an acknowledgement the producer has long since acted on.
+   * What is awaited is the start, never the run: `runWorkflow` resolves once
+   * Workflows has taken the instance, and everything after that is durable
+   * somewhere other than this request. The whole validated packet is the
+   * payload, because a step retrying half an hour from now must not depend on
+   * this Agent still being awake or still holding the row.
+   *
+   * The packet id also travels as workflow metadata, which is the only reason a
+   * failure can be attributed later: a failed run has no result to read an id
+   * out of, and the metadata is stored beside the tracking row rather than in
+   * memory, so an Agent that was evicted and rehydrated can still say which
+   * packet the failure belonged to.
    */
   protected async startEvaluate(packet: Packet): Promise<void> {
-    console.log(`packet ${packet.packet_id} accepted; evaluation is not wired up yet`);
+    await this.runWorkflow(
+      EVALUATE_WORKFLOW,
+      { packet },
+      { metadata: { packet_id: packet.packet_id } },
+    );
+  }
+
+  /**
+   * Write the evaluation down, then say it is done — in that order.
+   *
+   * The order is a promise to clients: a browser that reacts to the `complete`
+   * stage by asking for the packet's history must find the rows already there,
+   * and the only way to guarantee that is to publish after the write rather
+   * than beside it.
+   *
+   * Nothing in here reads anything the accept path left in memory. A workflow
+   * can finish long after the Agent that started it was evicted, so the result
+   * and storage are the whole of what a completion has to work from.
+   */
+  override async onWorkflowComplete(
+    _workflowName: string,
+    workflowId: string,
+    result?: unknown,
+  ): Promise<void> {
+    const evaluation = readEvaluateResult(result);
+    if (evaluation === null) {
+      console.error(`workflow ${workflowId} finished with a result this judge cannot read`);
+      return;
+    }
+
+    this.publishOutcome(workflowId, { ok: true, result: evaluation });
+  }
+
+  /**
+   * Record that a run ended without a verdict, and publish the failed stage.
+   *
+   * A failure is history rather than an absence of it: the packet keeps a row
+   * saying the attempt was made and stopped, which is what a human scanning the
+   * board needs to tell "never judged" apart from "judged and quiet".
+   */
+  override async onWorkflowError(
+    _workflowName: string,
+    workflowId: string,
+    error: string,
+  ): Promise<void> {
+    const packetId = this.getWorkflow(workflowId)?.metadata?.packet_id;
+    if (typeof packetId !== "string") {
+      console.error(`workflow ${workflowId} failed for a packet this judge cannot name`, error);
+      return;
+    }
+
+    this.publishOutcome(workflowId, { ok: false, packet_id: packetId, reason: error });
+  }
+
+  /**
+   * The one path both endings share: persist, then publish.
+   *
+   * A completion naming a packet that was never stored here is logged and
+   * dropped. It means a run was routed to the wrong instance, and the only
+   * worse answer than losing it would be inventing the packet it is about.
+   *
+   * The snapshot is spread from the published one rather than rebuilt, so the
+   * counter and the agent name a run has no opinion about survive it.
+   */
+  private publishOutcome(workflowId: string, outcome: EvaluationOutcome): void {
+    if (persistEvaluation(sqlTag(this), outcome) === "unknown_packet") {
+      const packetId = outcome.ok ? outcome.result.packet_id : outcome.packet_id;
+      console.error(`workflow ${workflowId} finished for unknown packet ${packetId}`);
+      return;
+    }
+
+    this.setState({ ...this.state, ...terminalState(outcome) } as JudgeState);
   }
 }

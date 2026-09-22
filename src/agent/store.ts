@@ -348,6 +348,19 @@ export function recordVerdict(sql: SqlTag, packetId: string, verdict: Verdict): 
 }
 
 /**
+ * Move a stored packet to the status it has reached.
+ *
+ * An id with no row updates nothing and says nothing about it, because the only
+ * caller that can reach here with an unknown id is one holding the outcome of a
+ * workflow for a packet that was never stored, and inventing a row to carry a
+ * status would be worse than the gap it papers over. Callers that need to tell
+ * the two apart ask `hasPacket` first.
+ */
+export function setPacketStatus(sql: SqlTag, packetId: string, status: PacketStatus): void {
+  sql`UPDATE packets SET status = ${status} WHERE packet_id = ${packetId}`;
+}
+
+/**
  * Attach a human's label to a packet.
  *
  * Labels accumulate instead of replacing one another: two people disagreeing

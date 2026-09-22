@@ -161,9 +161,12 @@ describe("runEvaluate", () => {
     expect(jevStates).toEqual([result.summary]);
     expect(judged).toEqual([{ summary: result.summary, jev: JEV_OK }]);
 
+    // The jev milestone is the one that carries a status, because whether
+    // priors exist is what a watching client needs at that boundary rather than
+    // two steps later.
     expect(milestones).toEqual([
       { packet_id: packet.packet_id, step: "summarize", stage: "summarized" },
-      { packet_id: packet.packet_id, step: "jev", stage: "jev" },
+      { packet_id: packet.packet_id, step: "jev", stage: "jev", jev_status: "ok" },
       { packet_id: packet.packet_id, step: "judge", stage: "judging" },
     ]);
   });
