@@ -84,7 +84,13 @@ export const INITIAL_BOARD_STATE: BoardState = {
   updatedAt: "1970-01-01T00:00:00.000Z",
 };
 
-/** Map internal evaluate stages onto the four demo columns. */
+/**
+ * Map internal evaluate stages onto the four demo columns.
+ *
+ * A column is where the packet is waiting or being worked, so `jev` is the chip
+ * being asked of System One and `llama` is the chip in front of System Two —
+ * both of them held there for the whole of that model's turn, retries included.
+ */
 export function packetStageFor(stage: Stage): PacketStage | null {
   switch (stage) {
     case "accepted":
@@ -94,6 +100,7 @@ export function packetStageFor(stage: Stage): PacketStage | null {
       return "jev";
     case "judging":
       return "llama";
+    case "judged":
     case "complete":
     case "failed":
       return "verdict";

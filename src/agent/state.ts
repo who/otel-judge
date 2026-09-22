@@ -38,10 +38,14 @@ export {
 export { INITIAL_BOARD_STATE as INITIAL_STATE } from "./boardState";
 
 /**
- * The seven stages a judged packet moves through internally.
+ * The eight stages a judged packet moves through internally.
  *
- * Mapped onto the four demo columns by `packetStageFor`. `failed` is terminal
- * like `complete`: a run that fails has still finished.
+ * Mapped onto the four demo columns by `packetStageFor`, where a column is the
+ * work the packet is waiting on rather than the step it last cleared. `judged`
+ * is that reading's terminal-in-all-but-name: System Two has answered and the
+ * chip belongs under its verdict, but which of `complete` or `failed` the run
+ * becomes is still the persister's to say. `failed` is terminal like `complete`:
+ * a run that fails has still finished.
  */
 export type Stage =
   | "idle"
@@ -49,5 +53,6 @@ export type Stage =
   | "summarized"
   | "jev"
   | "judging"
+  | "judged"
   | "complete"
   | "failed";

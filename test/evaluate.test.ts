@@ -164,18 +164,20 @@ describe("runEvaluate", () => {
 
     // The jev milestone is the one that carries a status, because whether
     // priors exist is what a watching client needs at that boundary rather than
-    // two steps later.
+    // two steps later. Each stage names what the packet is waiting on next, so
+    // the summarize milestone already puts it in front of System One and the jev
+    // milestone hands it to System Two rather than reporting the step just done.
     expect(milestones).toEqual([
-      { packet_id: packet.packet_id, step: "summarize", stage: "summarized" },
+      { packet_id: packet.packet_id, step: "summarize", stage: "jev" },
       {
         packet_id: packet.packet_id,
         step: "jev",
-        stage: "jev",
+        stage: "judging",
         jev_status: "ok",
         jev_distribution: { sev0: 0.05, sev1: 0.62, sev2: 0.21, noise: 0.04 },
         jev_latency_ms: 412,
       },
-      { packet_id: packet.packet_id, step: "judge", stage: "judging", llama_latency_ms: 1840 },
+      { packet_id: packet.packet_id, step: "judge", stage: "judged", llama_latency_ms: 1840 },
     ]);
   });
 
@@ -201,6 +203,10 @@ describe("runEvaluate", () => {
     expect(result.verdict).toBeUndefined();
     expect(judged).toHaveLength(0);
     expect(milestones.map((milestone) => milestone.step)).toEqual(["summarize", "jev"]);
+
+    // Nothing is waiting on System Two here, so the run stops on the jev stage
+    // instead of announcing a judge that is never asked.
+    expect(milestones.map((milestone) => milestone.stage)).toEqual(["jev", "jev"]);
   });
 
   it("stops before the judge when System One exhausts its budget", async () => {

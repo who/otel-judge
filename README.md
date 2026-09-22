@@ -58,10 +58,13 @@ by `src/agent/identity.ts` — the door and the Agent share that one derivation 
 a packet can never be routed to an instance nothing addresses again.
 
 The live snapshot every connected client sees (`src/agent/state.ts`) carries the
-stage — `idle`, `accepted`, `summarized`, `jev`, `judging`, `complete`,
-`failed` — plus the packet count, the last packet id, the last verdict severity
-and summary, and whether Jev answered. Distributions, prompts, and verdict prose
-stay in SQL and are fetched deliberately.
+stage — `idle`, `accepted`, `summarized`, `jev`, `judging`, `judged`,
+`complete`, `failed` — plus the packet count, the last packet id, the last
+verdict severity and summary, and whether Jev answered. A stage names the work
+the packet is waiting on rather than the step it last cleared, so a chip stays
+in `jev` for the whole of System One's turn and reaches `judging` the moment
+System One answers. Distributions, prompts, and verdict prose stay in SQL and
+are fetched deliberately.
 
 ## Packet contract
 

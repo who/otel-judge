@@ -134,7 +134,7 @@ async function evaluate(
 }
 
 describe("a packet being judged", () => {
-  it("moves board chips through ingest→jev→llama→verdict", async () => {
+  it("moves board chips into the column holding the packet now", async () => {
     await withAgent("progress-stages", async (instance) => {
       const workflowId = await acceptFixture(instance);
       expect(instance.state.packets[0]?.stage).toBe("ingest");
@@ -147,7 +147,11 @@ describe("a packet being judged", () => {
         ...step.snapshots.map((state) => state.packets.find((p) => p.id === result.packet_id)?.stage),
         instance.state.packets.find((p) => p.id === result.packet_id)?.stage,
       ];
-      expect(stages).toEqual(["ingest", "jev", "llama", "verdict"]);
+      // A column is where the packet is being worked, not the step it last
+      // cleared: accepting it puts the chip in ingest, summarizing hands it to
+      // System One, and System One answering moves it in front of System Two
+      // while that model is still thinking rather than after it has spoken.
+      expect(stages).toEqual(["jev", "llama", "verdict", "verdict"]);
 
       const chip = instance.state.packets.find((p) => p.id === result.packet_id);
       expect(chip?.jev).toEqual({ sev0: 0.05, sev1: 0.62, sev2: 0.21, noise: 0.04 });
@@ -315,9 +319,12 @@ describe("a packet being judged", () => {
       expect(result.verdict).toBeUndefined();
 
       // Mid-run the chip claims nothing: a System One that has just failed is
-      // only a skipped System Two once the run is over.
+      // only a skipped System Two once the run is over. It also never reaches
+      // the llama column, because a run with no priors has no judge to wait for
+      // and stops where it failed.
       for (const snapshot of step.snapshots) {
         const live = snapshot.packets.find((p) => p.id === result.packet_id);
+        expect(live?.stage).toBe("jev");
         expect(live?.jevUnavailable).toBeUndefined();
       }
 

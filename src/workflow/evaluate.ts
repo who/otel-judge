@@ -64,7 +64,14 @@ export const STEP_RETRIES: Readonly<Record<EvaluateStepName, WorkflowStepConfig>
 });
 
 /**
- * The live stage each completed step puts the packet in.
+ * The live stage each completed step leaves the packet in.
+ *
+ * A stage names the work a packet is waiting on or being given now, not the step
+ * that has just finished, because that is what a column on the board is read as:
+ * a summarized packet is waiting on System One, a packet System One has answered
+ * for is waiting on System Two, and a judged packet has its verdict. Reporting
+ * the completed step instead would leave every chip one column behind the model
+ * actually thinking about it.
  *
  * Mapped against the Agent's own `Stage` union so a milestone can never announce
  * a stage no client knows how to read. The two terminal stages are absent on
@@ -72,10 +79,20 @@ export const STEP_RETRIES: Readonly<Record<EvaluateStepName, WorkflowStepConfig>
  * becomes `complete` or `failed` is decided by whoever persists the result.
  */
 export const STEP_STAGES: Readonly<Record<EvaluateStepName, Stage>> = Object.freeze({
-  summarize: "summarized",
-  jev: "jev",
-  judge: "judging",
+  summarize: "jev",
+  jev: "judging",
+  judge: "judged",
 });
+
+/**
+ * Where a run System One never answered for comes to rest.
+ *
+ * The jev boundary is the one whose stage depends on its own result. A packet
+ * with priors goes on to wait for System Two; a packet without them has stopped
+ * here, and announcing the judging stage for a judge this run will never ask
+ * would park the chip under a model that is not thinking about it.
+ */
+export const JEV_TERMINAL_STAGE: Stage = "jev";
 
 /**
  * What the workflow is started with.
@@ -250,7 +267,8 @@ async function noProgress(): Promise<void> {}
  * failed rather than recorded as an opinion nobody gave.
  *
  * Progress is reported after a step rather than before it, so a milestone is
- * always a claim about work that is durably done.
+ * always a claim about work that is durably done, and the stage it carries names
+ * the wait that work has moved the packet into rather than the step it finished.
  */
 export async function runEvaluate(
   step: EvaluateStep,
@@ -282,7 +300,7 @@ export async function runEvaluate(
   await report({
     packet_id: packetId,
     step: "jev",
-    stage: STEP_STAGES.jev,
+    stage: jev.ok ? STEP_STAGES.jev : JEV_TERMINAL_STAGE,
     jev_status: jevStateStatus(jev),
     jev_distribution: jevDistributionFromResult(jev),
     jev_latency_ms: jevLatencyFromResult(jev),
