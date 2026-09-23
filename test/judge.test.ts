@@ -6,6 +6,7 @@ import {
   judgeWithLlama,
   JUDGE_TEMPERATURE,
   MAX_VERDICT_TOKENS,
+  replyText,
   type JudgeEnv,
   type LlamaInput,
 } from "../src/llm/judge";
@@ -334,6 +335,58 @@ describe("parseVerdict", () => {
   });
 });
 
+describe("replyText", () => {
+  it("reads a binding that answered with the string on its own", () => {
+    expect(replyText(VERDICT_JSON)).toBe(VERDICT_JSON);
+  });
+
+  it("reads the documented text-generation object", () => {
+    expect(replyText({ response: VERDICT_JSON })).toBe(VERDICT_JSON);
+  });
+
+  it("unwraps the envelope the REST gateway wraps that same object in", () => {
+    expect(replyText({ result: { response: VERDICT_JSON }, success: true })).toBe(VERDICT_JSON);
+  });
+
+  it("joins a reply that arrived as chunks rather than as one string", () => {
+    expect(replyText({ response: ['{"severity": ', '"sev1"}'] })).toBe('{"severity": "sev1"}');
+  });
+
+  it("reads the OpenAI-compatible surface the same model is also served on", () => {
+    const reply = { choices: [{ message: { role: "assistant", content: VERDICT_JSON } }] };
+
+    expect(replyText(reply)).toBe(VERDICT_JSON);
+  });
+
+  it("takes the first readable alternative instead of splicing two answers together", () => {
+    const second = JSON.stringify({ severity: "noise", summary: "second thoughts" });
+
+    // Two choices are two answers to one question. Concatenated, the parser
+    // would read the front half of a reply that never existed.
+    expect(replyText({ choices: [{ text: VERDICT_JSON }, { text: second }] })).toBe(VERDICT_JSON);
+  });
+
+  it("reads a message whose content arrived as typed parts", () => {
+    const reply = {
+      message: {
+        content: [
+          { type: "text", text: "half " },
+          { type: "text", text: "and half" },
+        ],
+      },
+    };
+
+    expect(replyText(reply)).toBe("half and half");
+  });
+
+  it("answers the empty string for a reply carrying no text at all", () => {
+    expect(replyText({ usage: { prompt_tokens: 12 } })).toBe("");
+    expect(replyText({ response: 42 })).toBe("");
+    expect(replyText(null)).toBe("");
+    expect(replyText(undefined)).toBe("");
+  });
+});
+
 describe("judgeWithLlama", () => {
   it("asks the pinned model with both messages and parses what came back", async () => {
     const { env, calls } = stub(() => ({ response: VERDICT_JSON }));
@@ -390,6 +443,31 @@ describe("judgeWithLlama", () => {
 
     expect(result.verdict.severity).toBe("unknown");
     expect(result.verdict.raw).toBe("no JSON here, sorry");
+  });
+
+  it("grades a reply that came back under the envelope the live gateway adds", async () => {
+    const { env } = stub(() => ({ result: { response: VERDICT_JSON }, success: true }));
+    const result = await judgeWithLlama(env, summaryOf(), success());
+
+    // The failure this guards against stored a run of incidents as ungraded:
+    // the model had answered, and only the reading of its answer was wrong.
+    expect(result.verdict.severity).toBe("sev1");
+    expect(result.verdict.raw).toBe(VERDICT_JSON);
+  });
+
+  it("records which shape defeated it, by key and type rather than by value", async () => {
+    const { env } = stub(() => ({
+      usage: { prompt_tokens: 12 },
+      request_id: "req-do-not-store-this",
+    }));
+    const result = await judgeWithLlama(env, summaryOf(), success());
+
+    expect(result.verdict.severity).toBe("unknown");
+    expect(result.verdict.raw).toContain("usage");
+    expect(result.verdict.raw).toContain("request_id");
+    // A reply is untrusted input, and a diagnostic kept in durable history is
+    // the last place an echoed identifier or prompt fragment belongs.
+    expect(result.verdict.raw).not.toContain("req-do-not-store-this");
   });
 
   it("lets a rejected binding call propagate so the workflow step can retry it", async () => {

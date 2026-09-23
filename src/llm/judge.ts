@@ -244,22 +244,106 @@ export function buildJudgePrompt(summary: PacketSummary, jev: JevResult): JudgeP
   return { system: SYSTEM_MESSAGE, user };
 }
 
+/** How many envelopes deep the generated text may sit before the search gives up. */
+const MAX_REPLY_DEPTH = 6;
+
+/** Fields that carry the generated text itself, in the order a reply is searched. */
+const REPLY_TEXT_FIELDS = ["response", "output_text", "text", "content"] as const;
+
+/** Fields that carry another reply rather than text of their own. */
+const REPLY_WRAPPER_FIELDS = ["result", "message", "delta"] as const;
+
+/** Fields that carry several answers to one prompt, the first readable of which is the reply. */
+const REPLY_ALTERNATIVE_FIELDS = ["choices", "output"] as const;
+
+/** How many keys of an unreadable reply are named before the description is cut short. */
+const MAX_SHAPE_KEYS = 8;
+
 /**
  * Pull the generated text out of whatever the binding answered with.
  *
- * Workers AI returns an object carrying `response` for a text-generation model
- * and, for some models and gateways, the string on its own. An unrecognised
- * shape becomes the empty string rather than an exception: the parser already
- * has a documented answer for a reply it cannot read, and there is no reason for
- * this function to invent a second one.
+ * One account answers a text-generation call in more than one shape: the
+ * documented `response` string, that same object under a `result` envelope when
+ * the call went out through the REST gateway, an OpenAI-compatible `choices`
+ * list when the model is served on that surface, and a list of chunks when the
+ * text arrived in pieces. Reading `response` alone turned every other shape into
+ * the empty string, and an empty string parses to an unknown severity, so a
+ * binding that was answering perfectly well filled stored history with verdicts
+ * that graded nothing and carried nothing to say why.
+ *
+ * The search is therefore by structure rather than by model name: text fields
+ * first, then the wrappers that hold another reply inside them, then the lists
+ * that offer alternatives, descending a bounded number of levels so a self
+ * referencing object cannot spin here. An unrecognised shape is still the empty
+ * string rather than an exception — the parser already has a documented answer
+ * for a reply it cannot read, and `describeReplyShape` is what says out loud
+ * which shape arrived instead.
  */
-function replyText(reply: unknown): string {
+export function replyText(reply: unknown, depth = 0): string {
   if (typeof reply === "string") return reply;
-  if (typeof reply === "object" && reply !== null && "response" in reply) {
-    const response = (reply as { response: unknown }).response;
-    if (typeof response === "string") return response;
+  if (depth >= MAX_REPLY_DEPTH || typeof reply !== "object" || reply === null) return "";
+
+  // A bare list is one reply in pieces — streamed tokens, or the parts of a
+  // typed content array — so the text is their concatenation in arrival order.
+  if (Array.isArray(reply)) {
+    return reply.map((part) => replyText(part, depth + 1)).join("");
   }
+
+  const record = reply as Record<string, unknown>;
+
+  for (const field of [...REPLY_TEXT_FIELDS, ...REPLY_WRAPPER_FIELDS]) {
+    const text = replyText(record[field], depth + 1);
+    if (text !== "") return text;
+  }
+
+  // Alternatives rather than pieces: a `choices` list holds competing answers to
+  // the same question, and concatenating them would splice two verdicts into one
+  // reply for the parser to read the front half of.
+  for (const field of REPLY_ALTERNATIVE_FIELDS) {
+    const alternatives = record[field];
+    if (!Array.isArray(alternatives)) continue;
+    for (const alternative of alternatives) {
+      const text = replyText(alternative, depth + 1);
+      if (text !== "") return text;
+    }
+  }
+
   return "";
+}
+
+/**
+ * Say what arrived, for a reply nothing could be read out of.
+ *
+ * Kept as the verdict's raw text, because an unknown severity behind an empty
+ * raw string is the one verdict a human cannot act on: it does not distinguish a
+ * model that answered badly from a reply shape this repository failed to read,
+ * and those two call for opposite responses.
+ *
+ * Key names and value types only, never a value. A reply is untrusted input that
+ * may echo the prompt back or carry an account identifier beside it, and a
+ * diagnostic written into durable history is the last place that belongs.
+ */
+function describeReplyShape(reply: unknown): string {
+  return `System Two answered with nothing this judge could read; the reply was ${shapeOf(reply)}`;
+}
+
+function typeOf(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function shapeOf(value: unknown): string {
+  if (value === null || typeof value !== "object") return `a ${typeOf(value)}`;
+  if (Array.isArray(value)) return `a list of ${value.length}`;
+
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (keys.length === 0) return "an object with no keys";
+
+  const named = keys.slice(0, MAX_SHAPE_KEYS).map((key) => `${key} (${typeOf(record[key])})`);
+  if (keys.length > named.length) named.push(`and ${keys.length - named.length} more`);
+  return `an object carrying ${named.join(", ")}`;
 }
 
 /**
@@ -300,6 +384,13 @@ export async function judgeWithLlama(
   // it was asked.
   const latency_ms = Math.max(0, Math.round(Date.now() - startedAt));
 
-  const verdict = applyPriorDeference(parseVerdict(replyText(reply)), jev);
+  // A reply nothing could be read out of is stored as a description of what did
+  // arrive, so the shape that defeated the extraction is on the record next to
+  // the verdict it degraded rather than lost to a log line nobody kept.
+  const text = replyText(reply);
+  const verdict = applyPriorDeference(
+    parseVerdict(text === "" ? describeReplyShape(reply) : text),
+    jev,
+  );
   return { verdict, model, prompt, latency_ms };
 }
