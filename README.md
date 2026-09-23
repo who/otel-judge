@@ -4,7 +4,7 @@
 
 A simple OpenTelemetry traffic assessor on Cloudflare. It takes a burst of OTel-shaped packets and asks: is this noise, or something an SRE should care about?
 
-**Mission:** keep that judgment small and honest. **Jev** (the new Typesafe / Harpylink model) runs first as LLM-as-judge and writes probability priors. **Llama 3.3** on Workers AI runs second and writes the PASS / FLAG / ESCALATE verdict. No chat-bot cosplay ? just traffic in, a verdict out, a board you can watch.
+**Mission:** keep that judgment small and honest. **Jev** (the new Typesafe / Harpylink model) runs first as LLM-as-judge and writes probability priors. **Llama 3.3** on Workers AI runs second and writes the PASS / FLAG / ESCALATE verdict. No chat-bot cosplay -- just traffic in, a verdict out, a board you can watch.
 
 ```mermaid
 flowchart LR
