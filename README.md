@@ -4,7 +4,7 @@
 
 A simple OpenTelemetry traffic assessor on Cloudflare. It takes a burst of OTel-shaped packets and asks: is this noise, or something an SRE should care about?
 
-**Mission:** keep that judgment small and honest. **Jev** (the new Typesafe / Harpylink model) runs first as LLM-as-judge and writes probability priors. **Llama 3.3** on Workers AI runs second and writes the PASS / FLAG / ESCALATE verdict. No chat-bot cosplay -- just traffic in, a verdict out, a board you can watch.
+**Mission:** keep that judgment small and honest. [**Jev**](https://typesafe.ai/blog/introducing-system-one-models-and-jev) (TypeSafe AI's new System One model) runs first as LLM-as-judge and writes probability priors. **Llama 3.3** on Workers AI runs second and writes the PASS / FLAG / ESCALATE verdict. No chat-bot cosplay -- just traffic in, a verdict out, a board you can watch.
 
 ```mermaid
 flowchart LR
@@ -28,7 +28,7 @@ The Agent is consume-only. It never generates telemetry. Firehose produces; Judg
 
 | CF requirement | Implementation in this repo |
 |---|---|
-| LLM | Workers AI Llama as judge; TypeSafe **Jev** as external System One |
+| LLM | Workers AI Llama as judge; [TypeSafe **Jev**](https://typesafe.ai/blog/introducing-system-one-models-and-jev) as external System One |
 | Workflow / coordination | `AgentWorkflow`: summarize → Jev → Llama; retries; `mergeAgentState` |
 | User input / interactive surface | [Live demo board](https://who.github.io/otel-judge-demo/) (Emit / Reset / inspect); Agent API is channel-agnostic |
 | Memory / state | `setState` (live) + `this.sql` (history, labels) |
