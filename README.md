@@ -1,18 +1,28 @@
 # OTel Judge
 
-A Cloudflare Agent that judges OpenTelemetry incidents. A producer posts a
-normalized **packet** — one service, one time window, already aggregated — and a
-durable Agent evaluates it through a two-model pipeline: TypeSafe **Jev** answers
-a fixed set of narrow questions as System One, and Workers AI **Llama** reads
-those full probability distributions and writes the verdict as System Two.
+**[Try the live demo](https://who.github.io/otel-judge-demo/)**
 
-The Agent is consume-only. It never generates telemetry, never fabricates a
-distribution when System One is unreachable, and never imports anything from a
-channel — the browser board, a future Slack app, and a replay script all reach
-the same surface.
+A simple OpenTelemetry traffic assessor on Cloudflare. It takes a burst of OTel-shaped packets and asks: is this noise, or something an SRE should care about?
 
-A live demo board is maintained in a separate repository and linked at the
-bottom of this file; no demo source is in this repository.
+**Mission:** keep that judgment small and honest. **Jev** (the new Typesafe / Harpylink model) runs first as LLM-as-judge and writes probability priors. **Llama 3.3** on Workers AI runs second and writes the PASS / FLAG / ESCALATE verdict. No chat-bot cosplay ? just traffic in, a verdict out, a board you can watch.
+
+```mermaid
+flowchart LR
+  F[Firehose] -->|packets| J[Judge Worker]
+  J --> S1[Jev priors]
+  S1 --> S2[Llama verdict]
+  S2 --> B[Demo board]
+```
+
+## Repos
+
+| Repo | Role |
+|---|---|
+| **This one** ([who/otel-judge](https://github.com/who/otel-judge)) | Agent, Workflow, ingest, Jev + Llama pipeline |
+| [who/otel-judge-firehose](https://github.com/who/otel-judge-firehose) | Packet producer (Emit / scenarios) |
+| [who/otel-judge-demo](https://github.com/who/otel-judge-demo) | GitHub Pages board UI |
+
+The Agent is consume-only. It never generates telemetry. Firehose produces; Judge judges; the demo only displays.
 
 ## Cloudflare assignment mapping
 
@@ -20,7 +30,7 @@ bottom of this file; no demo source is in this repository.
 |---|---|
 | LLM | Workers AI Llama as judge; TypeSafe **Jev** as external System One |
 | Workflow / coordination | `AgentWorkflow`: summarize → Jev → Llama; retries; `mergeAgentState` |
-| User input / interactive surface | Channel-agnostic Agent API; Pages is a separate channel repo |
+| User input / interactive surface | [Live demo board](https://who.github.io/otel-judge-demo/) (Emit / Reset / inspect); Agent API is channel-agnostic |
 | Memory / state | `setState` (live) + `this.sql` (history, labels) |
 | Prompt history | Sanitized Ortus trail at ship; raw logs gitignored |
 
