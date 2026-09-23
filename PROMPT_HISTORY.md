@@ -1,12 +1,686 @@
 # Prompt history
 
-Generated: 2026-09-22T15:17:23.160Z
+Generated: 2026-09-23T00:58:21.112Z
 
-Source: beads — the issue text that prompted each unit of work (title, description, design, acceptance). Not a grind transcript.
+Source: beads — the issue text that prompted each unit of work (title, description, design, acceptance). Not a grind transcript. The standing prompts each of those issues was worked under are reproduced first.
+
+## Ortus harness
+
+Every bead below was worked by an agent launched under one of these standing prompts, reproduced in full as `ortus 0.4.1.dev33+gfa7bb29` resolved them for the `claude` backend. The beads say what was asked; the harness says how it was asked.
+
+### goal (implementation)
+
+One-issue worker loop grind points /goal workers at. Resolved from bundled (default).
+
+```text
+Read `AGENTS.md` first. One context window, one issue, then exit. Do not pick a second issue. Grind starts a fresh process for the next issue; do not compact.
+
+1. **Orient.** Ninety-second standup only: what is in flight, what just happened, what the tree looks like. Do not open work specs here. Each `bd` command is its own Bash call with `bd` as the first token. Never wrap `bd` in a pipe, `xargs`, `&&`, `;`, or `bash -c`. Git commands are their own Bash calls.
+   - `bd list --status=in_progress --json --brief` — leftover claims, each with its labels.
+   - `bd events tail --limit 20 --json` — recent closes, comments, claims, creates. Comments are the interesting lines (`op=comment`); closes are next. `bd events` starts at enable and does not backfill older comments.
+   - `git log -5 --oneline` — what actually landed.
+   - `git status --porcelain` — inherited dirty paths.
+   Do not `bd show`, `bd show --long`, or `bd comments` in this step. After you pick an id in step 2, `bd show <id> --json` is the work spec and `bd comments <id> --json` is that ticket's thread.
+
+2. **Continue or select.** When a Bound issue contract v1 is injected, its JSON issue id is opaque data. Read only that id with bd show, quoting it as one argument after --. Verify it is still in_progress, has no human label, and its assignee matches BEADS_ACTOR. On mismatch or multiple non-human in_progress issues, record PLAN-GAP, flag human and stop without selecting another issue. Otherwise continue only the bound id, skip bd ready and claiming, and retain the normal implementation and session-close steps. Without that injection, use the selection rules below. An `in_progress` issue labeled `human` is the operator's, never yours: do not continue it, and when every `in_progress` id is labeled `human`, proceed as if nothing were in progress. If exactly one issue not labeled `human` is `in_progress`, continue that id. If more than one is `in_progress` without that label, flag human, comment PLAN-GAP, and stop. Else run `bd ready --json`. If empty, exit with no sentinel. Skip issues labeled `human` — they await operator repair. Claim the first remaining non-epic issue with `bd update <id> --status=in_progress`. Then `bd show <id> --json` — that packet is the work spec.
+
+3. **Investigate and implement** only that issue. Use CodeGraph when the injected CodeGraph contract requires it. Run the verification your composed instruction names: the issue's criterion-check commands, or, when a `## Prototype verification` section is injected, that section's lint and syntax gate instead of the issue's test commands; follow `docs/testing.md` only if that file exists. Fix failures. Every check you start must finish before your turn ends — never end the turn with verification still running in the background. A criterion check that cannot complete within this window is a work-spec defect: do not start it — comment PLAN-GAP, flag human, and stop. File leftover work as new beads; do not keep it on this id. Before filing or re-scoping any bead, run `bd memories <keyword>` for the task's subject; owner-decision memories (keys carrying a `policy` or `decision` token) are binding on the new bead's Non-goals and Resolved decisions.
+
+4. **Session-close** that id per `AGENTS.md`: completion comment, commit, `bd close`, `git pull --rebase --autostash`, `bd dolt push`, `git push`. Do not wait for an outer process to commit or close.
+
+5. **Exit.** No sentinel. Do not start another issue. After session-close the goal is achieved: the issue is closed and HEAD is in sync with origin. The checks you ran in step 3 are the whole verification — do not run pytest or the repo test suite again. Answer only after every check you started has finished; nothing you launched may still be running when you stop. Answer with the id, close reason, HEAD sha, and those commands. Then stop. Do not re-read the implementation.
+```
+
+### interview (interview)
+
+Interactive PRD-building interview script. Resolved from bundled (default).
+
+````text
+<!--
+Prompt resolution precedence (loaded by core/prompts.py, FR-025):
+  1. <repo>/.ortus/prompts/interview-prompt.md   (per-repo override)
+  2. ~/.ortus/prompts/interview-prompt.md        (user-wide override)
+  3. bundled [redacted].md  (this file)
+The first existing file wins; the others are ignored.
+
+Template variables (substituted by commands/interview.py):
+  $feature_id   bd id of the feature being interviewed
+-->
+
+# Feature Interview Prompt
+
+You are conducting a product requirements interview for feature $feature_id.
+
+## Feature Details
+**ID**: {{FEATURE_ID}}
+**Title**: {{FEATURE_TITLE}}
+**Description**:
+{{FEATURE_DESCRIPTION}}
+
+## Project Context
+**Project Type**: other
+
+## Your Task
+
+Conduct a dynamic, conversational interview to gather the information needed to write a comprehensive PRD. The interview adapts based on the project type and the quality of user responses.
+
+### Core Topics (All Projects)
+1. **Problem Space** - What problem does this solve? Who experiences it? How painful is it?
+2. **Users & Personas** - Who are the primary users? What are their goals?
+3. **Scope** - What's in scope for v1? What should be explicitly out of scope?
+4. **Success Criteria** - How will we measure if this succeeded?
+5. **Technical Constraints** - Are there specific technologies, integrations, or limitations?
+
+
+### General Topics
+Since this is a general project, adapt questions to what seems most relevant based on the feature description. Ask about architecture, data flow, and integration points as they come up naturally.
+
+
+## Interview Guidelines
+
+### Adaptive Depth Probing
+**IMPORTANT**: Monitor the quality and depth of user responses. After each answer:
+
+1. **Check answer length**: If the answer is brief (fewer than ~20 words) or vague:
+   - Ask a targeted follow-up to dig deeper
+   - Example: "Can you tell me more about [specific aspect]?" or "What would that look like in practice?"
+
+2. **Check for specificity**: If the answer lacks concrete details:
+   - Probe for examples: "Can you give me an example of when this would happen?"
+   - Probe for numbers: "Roughly how many users/requests/items are we talking about?"
+
+3. **Track underspecified areas**: Keep mental note of topics that need more detail:
+   - If "users" were described vaguely, come back to it
+   - If "scope" seems unclear, ask clarifying questions
+
+### Expert Mode Detection
+**Respect the user's expertise**: If user responses are comprehensive, detailed, and technical:
+
+1. **Condense remaining questions**: Skip redundant questions that were already answered
+2. **Accelerate pace**: Combine related topics into single questions
+3. **Match their level**: Use more technical language in follow-ups
+4. **Don't patronize**: If they've clearly thought through an area, move on
+
+Signs of expert responses:
+- Proactively addresses multiple concerns in one answer
+- Uses specific technical terminology
+- Mentions edge cases or trade-offs unprompted
+- Gives quantitative estimates or constraints
+
+### General Guidelines
+- **Use AskUserQuestion** for each question - this provides a better interactive experience
+- **Adapt dynamically** - Ask follow-up questions based on previous answers
+- **Skip the obvious** - Don't ask about topics already clear from the description
+- **Stay focused** - Keep questions specific and actionable
+- **Save as you go** - After each answer, save it as a comment on the feature bead
+
+## Saving Answers
+
+After receiving each answer, save a concise summary to the bead:
+
+```bash
+bd comments add {{FEATURE_ID}} "Q: <question summary>
+A: <answer summary>"
+```
+
+This creates an audit trail and helps with PRD generation later.
+
+## Completing the Interview
+
+When you have gathered sufficient information (typically after 5-8 questions):
+
+### Step 1: Display Interview Summary with Confidence Assessment
+
+Show the user a complete summary of all questions and answers, along with a confidence assessment for each major area:
+
+```
+## Interview Summary
+
+### Responses
+
+Q1: [Question text]
+A: [Answer summary]
+
+Q2: [Question text]
+A: [Answer summary]
+
+... (all questions and answers)
+
+### Confidence Assessment
+
+| Area | Confidence | Notes |
+|------|------------|-------|
+| Problem Space | High/Medium/Low | [Brief note on coverage] |
+| Users & Personas | High/Medium/Low | [Brief note on coverage] |
+| Scope | High/Medium/Low | [Brief note on coverage] |
+| Success Criteria | High/Medium/Low | [Brief note on coverage] |
+| Technical Constraints | High/Medium/Low | [Brief note on coverage] |
+
+
+
+
+
+**Overall Confidence**: [High/Medium/Low]
+```
+
+Confidence levels:
+- **High**: Detailed, specific answers with examples or numbers
+- **Medium**: General direction is clear but some details are missing
+- **Low**: Vague or missing information that could affect implementation
+
+### Step 2: Handle Low Confidence Areas
+
+If any area has **Low** confidence:
+
+```
+question: "Some areas could use more detail. Would you like to clarify these before I generate the PRD, or proceed with what we have?"
+header: "Gaps"
+options:
+  - label: "Clarify weak areas"
+    description: "Let me ask a few more questions about [low confidence areas]"
+  - label: "Proceed anyway"
+    description: "Generate PRD with current information, I can refine later"
+```
+
+If user chooses to clarify, ask 1-2 targeted questions about the low-confidence areas before proceeding.
+
+### Step 3: Ask for Interview Approval
+
+Use AskUserQuestion to confirm the interview is complete:
+
+```
+question: "Does this summary look correct? Should I generate a PRD based on these responses?"
+header: "Approve"
+options:
+  - label: "Yes, generate PRD"
+    description: "Interview looks good, proceed to PRD generation"
+  - label: "No, I want to revise"
+    description: "I need to change or clarify some answers"
+```
+
+If the user wants to revise, ask which answer they want to change and update accordingly.
+
+### Step 4: Generate and Display PRD
+
+If approved, do the following in sequence:
+
+1. **Save final summary as comment**:
+   ```bash
+   bd comments add {{FEATURE_ID}} "Interview Summary:
+   - Key problem: <summary>
+   - Target users: <summary>
+   - Scope: <summary>
+   - Success criteria: <summary>
+   - Confidence: <overall confidence level>"
+   ```
+
+2. **Add the interviewed label**:
+   ```bash
+   bd label add {{FEATURE_ID}} interviewed
+   ```
+
+3. **Generate PRD document** with these sections:
+   - Standard PRD sections (Overview, Background, Users, Requirements)
+   - System Architecture
+   - Milestones & Phases
+   - Epic Breakdown
+
+   **Important**: Fill the sections in with the information gathered from the interview. Adapt sections as needed based on interview responses - not every section may be relevant.
+
+4. **Save the PRD** to `prd/PRD-<feature-slug>.md`
+
+5. **Display the PRD** to the user (output the full PRD content)
+
+### Step 4.5: Validate PRD Quality
+
+Before asking for approval, validate the PRD against quality standards. Present the results to the user.
+
+#### Validation Checks
+
+**Blocking Issues** (must be fixed before approval):
+1. **Problem Statement**: Must be present and contain at least 50 words
+2. **Success Metrics**: Must define at least 2 measurable metrics
+3. **Functional Requirements**: Must list at least 3 requirements
+4. **Out of Scope**: Section must be present and populated
+5. **No Placeholders**: Check for TODO, TBD, FIXME, or [placeholder] text
+
+**Quality Warnings** (non-blocking, but flagged for review):
+1. **Thin Sections**: Any section with fewer than 30 words
+2. **Unmeasurable Metrics**: Success metrics without numbers, percentages, or clear criteria
+3. **Requirements Missing Criteria**: Functional requirements without "shall" or acceptance criteria
+4. **Missing NFRs for Project Type**:
+
+
+5. **Large Scope Without Phasing**: More than 10 requirements without clear milestone breakdown
+
+#### Validation Output Format
+
+Display the validation results:
+
+```
+## PRD Validation Results
+
+### Section Completeness
+| Section | Status | Notes |
+|---------|--------|-------|
+| Problem Statement | ✅ Pass / ❌ Fail | X words (min 50) |
+| Success Metrics | ✅ Pass / ❌ Fail | X defined (min 2) |
+| Functional Requirements | ✅ Pass / ❌ Fail | X listed (min 3) |
+| Out of Scope | ✅ Pass / ❌ Fail | Present/Missing |
+| No Placeholders | ✅ Pass / ❌ Fail | Clean/Found: [list] |
+
+### Quality Indicators
+| Check | Status | Notes |
+|-------|--------|-------|
+| Measurable Metrics | ✅ / ⚠️ | All metrics have clear criteria |
+| Requirements Quality | ✅ / ⚠️ | All have acceptance criteria |
+| NFRs Coverage | ✅ / ⚠️ | Appropriate for project type |
+| Scope Phasing | ✅ / ⚠️ | Milestones are realistic |
+
+### Warnings
+- [List any warnings found, or "None"]
+
+**Overall Status**: ✅ Ready for Approval / ❌ Blocking Issues Found
+```
+
+#### Handling Validation Results
+
+**If blocking issues found**:
+
+```
+question: "The PRD has some blocking issues that should be addressed. How would you like to proceed?"
+header: "Issues"
+options:
+  - label: "Fix issues automatically"
+    description: "I'll revise the PRD to address the blocking issues"
+  - label: "Override and approve anyway"
+    description: "Proceed despite issues (not recommended)"
+  - label: "Start over"
+    description: "Discard this PRD and restart the interview"
+```
+
+If user selects "Fix issues automatically":
+- Revise the PRD to address blocking issues
+- Re-run validation
+- Display updated results
+
+If user selects "Override and approve anyway":
+- Add a note to the PRD metadata: `**Validation Override**: Approved despite blocking issues`
+- Proceed to Step 5
+
+**If only warnings (no blocking issues)**:
+
+```
+question: "The PRD passes all required checks with some warnings. How would you like to proceed?"
+header: "Review"
+options:
+  - label: "Approve as-is"
+    description: "Warnings are acceptable, proceed to task creation"
+  - label: "Address warnings first"
+    description: "I'll improve the PRD to address the warnings"
+```
+
+If user selects "Address warnings first":
+- Ask which warnings they want addressed
+- Revise the PRD
+- Re-run validation
+
+**If validation passes cleanly**:
+
+Output: "✅ PRD passes all quality checks! Ready for approval."
+
+Then proceed to Step 5.
+
+### Step 5: Ask for PRD Approval
+
+Use AskUserQuestion to confirm the PRD is acceptable:
+
+```
+question: "I've generated the PRD above. Would you like to approve it and create implementation tasks?"
+header: "PRD"
+options:
+  - label: "Approve and create tasks"
+    description: "PRD looks good, create implementation tasks for ralph"
+  - label: "Request changes"
+    description: "I want to modify the PRD before approving"
+```
+
+If the user wants changes, ask what they want to modify and update the PRD accordingly.
+
+### Step 6: Create Implementation Tasks
+
+If PRD is approved:
+
+1. **Add the approved label**:
+   ```bash
+   bd label add {{FEATURE_ID}} approved
+   ```
+
+2. **Generate implementation tasks** by analyzing the PRD and creating 3-10 atomic tasks. Each task should:
+   - Be small enough to complete in one session
+   - Have clear acceptance criteria
+   - Include dependencies where needed
+
+3. **Create tasks with beads**:
+   ```bash
+   bd create --title="Task: [Name]" --type=task --priority=1 --body="[Description with acceptance criteria]"
+   ```
+
+4. **Set up dependencies** between tasks that need ordering:
+   ```bash
+   bd dep add <dependent-task-id> <blocking-task-id>
+   ```
+
+5. **Close the feature** with a summary:
+   ```bash
+   bd close {{FEATURE_ID}} --reason="PRD complete. Created N implementation tasks for ortus grind."
+   ```
+
+### Step 7: Complete the Session
+
+After tasks are created, tell the user:
+
+"All set! I've created [N] tasks ready for implementation.
+
+**Next step**: Exit this session and run:
+```
+ortus grind .
+```
+
+(Type /exit or Ctrl+C to leave)"
+
+**IMPORTANT**: Always end with a clear prompt telling the user to exit the session
+
+## Example Question Flow
+
+Start with mode selection, then adapt based on project type:
+
+
+### General Project Flow
+1. Mode selection (full interview vs one-shot)
+2. "What specific problem are you trying to solve with this feature?"
+3. "Who are the primary users, and what's their current workflow?"
+4. "What does success look like? How would you measure it?"
+5. "What should definitely NOT be included in the first version?"
+6. "Are there any technical constraints or existing systems this needs to integrate with?"
+7. (Follow-ups based on answers)
+
+
+## Starting the Interview
+
+**CRITICAL INSTRUCTION: Your FIRST action MUST be to call the AskUserQuestion tool.**
+
+Do NOT output any text before calling AskUserQuestion. Do NOT greet the user in a text response first. Your very first action must be a tool call to AskUserQuestion.
+
+### First Question: Interview Mode Selection
+
+Your FIRST AskUserQuestion must ask the user whether they want to do a full interview or skip to one-shot PRD generation:
+
+```
+question: "Hi! I'm here to help you define requirements for '{{FEATURE_TITLE}}'. This is a other project. Would you like to go through a full interview, or skip directly to one-shot PRD generation?"
+header: "Mode"
+options:
+  - label: "Full interview (Recommended)"
+    description: "Ask clarifying questions tailored to other projects"
+  - label: "One-shot PRD"
+    description: "Skip interview, generate PRD directly from idea description"
+```
+
+### If User Selects "Full interview (Recommended)"
+
+Proceed with the normal interview flow:
+1. Ask targeted questions based on project type (see "Example Question Flow" above)
+2. Apply adaptive depth probing for vague answers
+3. Use expert mode detection to accelerate if user is comprehensive
+4. Save answers as comments
+5. Show confidence assessment
+6. Generate PRD from answers
+7. Create tasks if approved
+
+### If User Selects "One-shot PRD"
+
+1. **Display warning**: Output this message:
+   "**One-shot mode**: Generating PRD directly from the feature description. Note that this may produce lower quality results compared to a full interview."
+
+2. **Skip to PRD generation**: Instead of asking interview questions, immediately proceed to Step 4 (Generate and Display PRD) using only the feature title and description provided above.
+
+3. **Continue with normal approval flow**: Show the PRD, ask for approval, create tasks if approved.
+
+The one-shot PRD should be clearly marked in its metadata as generated without interview:
+```markdown
+- **Generation Mode**: One-shot (no interview)
+- **Interview Confidence**: N/A (skipped)
+```
+
+Remember:
+- Your FIRST action is AskUserQuestion for mode selection (no text output before it)
+- Use AskUserQuestion for every question
+- Apply adaptive depth probing for short/vague answers
+- Detect expert users and adjust pace accordingly
+- Track confidence levels for each area
+- Be conversational but efficient
+- Focus on gathering actionable requirements
+````
+
+### plan (planning)
+
+PRD decomposition into readiness-v1 bd issues. Resolved from bundled (default).
+
+````text
+<!--
+Prompt resolution precedence (loaded by core/prompts.py, FR-025):
+  1. <repo>/.ortus/prompts/plan-prompt.md   (per-repo override)
+  2. ~/.ortus/prompts/plan-prompt.md        (user-wide override)
+  3. bundled src/ortus/prompts/plan-prompt.md  (this file — installed default)
+The first existing file wins; the others are ignored.
+-->
+
+Read $prd_path. Decompose the provided PRD Markdown into a Beads issue graph using existing bd fields. Epics may summarize broad outcomes, but every non-epic issue is an executable task for a fast implementation worker and MUST satisfy readiness schema v1 below. Resolve architecture and product choices during planning; never leave them for the implementer to infer.
+
+Structure hierarchically: epics for major features, decomposed into tasks via parent-child dependencies; use `blocks` for execution-order constraints and `related` for shared context. Give every issue a title, priority (0-4, 0=critical), type, labels, and estimated minutes. Emit all `bd create` and `bd dep add` commands as one sequential bash script and execute the entire script in one process. Do not fan out bd writes: Dolt enforces a single-writer lock.
+
+$readiness_spec
+
+## Complete executable-task example
+
+```bash
+ID_FLAG=$(bd create --silent \
+  --title="Add dry-run command path" \
+  --type=feature --priority=2 \
+  --description='## Objective
+Add a dry-run path that reports intended writes without changing state.
+
+## Behavioral context
+Today the command always writes. After this change, `--dry-run` prints the same planned operations and performs zero writes.' \
+  --design='## Readiness schema
+v1
+
+## Scope
+Parse the flag, thread it into execution, and suppress state-changing calls.
+
+## Non-goals
+No redesign of ordinary command output and no new interactive prompt.
+
+## Concrete locations
+Edit `src/example/commands/run.py` in `run()` and the `Executor.apply()` interface; cover `tests/test_run.py::test_dry_run`.
+
+## Resolved decisions
+Dry-run uses the existing operation renderer; it does not maintain a second simulation engine.
+
+## Compatibility constraints
+Normal invocations keep stdout and exit-code behavior unchanged on Linux and macOS.
+
+## Ordered steps
+1. Add the CLI flag to `run()`.
+2. Pass the boolean to `Executor.apply()`.
+3. Render operations and bypass writes when enabled.
+4. Add focused tests and documentation.
+
+## Dependencies
+No issue dependency — standalone task. Callers are `cli.app` and `Executor.apply()` consumers.
+
+## Edge cases
+Empty plans still exit zero; render failures remain nonzero; dry-run must not create state directories.
+
+## Plan-gap guidance
+If the renderer and executor disagree about operation ordering, record `PLAN-GAP` with both symbols and route to planning; do not choose an ordering.' \
+  --acceptance='## Observable criteria
+- AC-1 (proves-new): `--dry-run` reports the ordered operations and performs no writes. `uv run pytest tests/test_run.py::test_dry_run -q`
+- AC-2 (guards-existing): Invocations without `--dry-run` retain existing behavior. `uv run pytest tests/test_run.py::test_normal_run -q`.' \
+  --notes='CodeGraph confirmed `cli.app -> run -> Executor.apply`; no out-of-scope callers.')
+```
+
+End the turn after the complete issue graph exists. The caller mechanically validates every new task and may run one fresh planning-profile repair pass against the exact defective IDs. Repair must update those IDs in place: never create replacements, close originals, or silently duplicate work.
+
+## Issue ID handling (PREFIX-AGNOSTIC — read before generating any script)
+
+This workspace's bd issue prefix is configurable per `bd init --prefix=<name>` and defaults to the repo basename. **Do NOT assume `bd-` as the prefix anywhere in your generated script.** Common prefixes you may encounter: `ortus-`, `repo-`, `myapp-`, etc. The prefix is not always `bd-`.
+
+Follow these rules in your generated bash script:
+
+1. **Capture new IDs from `bd create` stdout directly** — do not regex for any `bd-XXX` pattern. Use `bd create --silent ...` (prints just the ID, e.g. `repo-k6r`), and bind to a shell variable:
+
+   ```bash
+   ID_FEATURE_A=$(bd create --silent --title="..." --description="..." --type=feature --priority=2)
+   ID_TEST_A=$(bd create --silent --title="..." --description="..." --type=task --priority=2)
+   bd dep add "$ID_TEST_A" "$ID_FEATURE_A"   # tests depend on feature
+   ```
+
+2. **Discover existing issue IDs via JSON, not regex.** When the script must reference issues that already exist (e.g., re-running plan on a workspace that has a partial graph), parse `bd list --json` with `jq`:
+
+   ```bash
+   # Find an existing issue by title substring; works for any prefix.
+   EXISTING_ID=$(bd list --status=open --json | jq -r '.[] | select(.title | contains("Implement add")) | .id' | head -1)
+   ```
+
+   Do **not** write `grep -oE 'bd-[a-z0-9]+'` or any regex that assumes the prefix shape. The `id` field in `bd list --json` output is the source of truth.
+
+3. **Idempotency check (re-run safety).** Before creating each issue, check whether one with the same title already exists; if so, reuse its ID instead of creating a duplicate:
+
+   ```bash
+   maybe_create() {
+     local title="$1"; shift
+     local existing
+     existing=$(bd list --status=open --json | jq -r --arg t "$title" '.[] | select(.title == $t) | .id' | head -1)
+     if [ -n "$existing" ]; then
+       echo "$existing"
+     else
+       bd create --silent --title="$title" "$@"
+     fi
+   }
+   ID_FEATURE_A=$(maybe_create "Implement add(a, b)" --description="..." --type=feature --priority=2)
+   ```
+
+Following these rules means the script works identically against `ortus-`, `bd-`, `repo-`, or any other prefix — and re-runs are safe (no duplicate issues).
+````
+
+## otel-judge-12m
+
+**POST /reset clears shared board state (gated)** (feature, closed)
+
+### Description
+
+> ## Objective
+> 
+> Add a local-safe `POST /reset` that clears the shared board Agent live state and its SQLite history so the demo can empty the swimlane without deleting `.wrangler/state` by hand.
+> 
+> ## Behavioral context
+> 
+> Before: Wrangler keeps Durable Object SQLite across restarts; the only wipe is deleting `.wrangler/state` with Judge stopped. After: `POST /reset` (gated) empties board chips and board-instance SQL tables, publishes `INITIAL_BOARD_STATE`, and returns 200. Demo bead calls this after a confirm dialog.
+> 
+> ## Cross-repo
+> 
+> Demo UI bead: file in who/otel-judge-demo (Reset button + confirm). Locked path: `POST {VITE_API_BASE}/reset` with CORS for DEMO_ORIGINS.
+
+### Design
+
+> ## Readiness schema
+> 
+> v1
+> 
+> ## Scope
+> 
+> Add gated `POST /reset` on the Worker that clears the shared `board` Agent live BoardState and that DO's SQLite history tables so the demo can empty the swimlane without deleting `.wrangler/state` by hand. Wire CORS like other demo-facing routes. Add vitest coverage for enabled vs disabled reset.
+> 
+> ## Non-goals
+> 
+> Do not delete `.wrangler/state` from disk. Do not enumerate or wipe every per-service Agent DO. Do not cancel in-flight Evaluate Workflows. Do not add auth beyond the ALLOW_BOARD_RESET gate. No firehose or demo UI work in this bead (demo is otel-judge-demo-drx).
+> 
+> ## Concrete locations
+> 
+> - `src/worker/router.ts` — `POST /reset` route + CORS
+> - `src/ingress/reset.ts` (or extend forward) — `getAgentByName` for `BOARD_INSTANCE_NAME` + internal fetch
+> - `src/agent/OtelJudgeAgent.ts` — handle board reset (header or path), `setState(INITIAL_BOARD_STATE)`
+> - `src/agent/store.ts` — `clearAllHistory(sql)` deleting packets / jev_runs / jev_answers / verdicts / human_labels in FK-safe order
+> - `src/agent/boardState.ts` — reuse `BOARD_INSTANCE_NAME` / `INITIAL_BOARD_STATE`
+> - `wrangler.jsonc` — `ALLOW_BOARD_RESET: "1"` under vars for local
+> - `test/reset.test.ts` — enabled 200 + empty board; disabled 403; no packet accept via reset path
+> - Env types / worker-configuration if ALLOW_BOARD_RESET must be declared
+> 
+> ## Resolved decisions
+> 
+> - Path: Worker `POST /reset` (browser never addresses a DO URL directly).
+> - Wipe scope: shared `board` instance only (live state + that DO's SQL).
+> - Gate: `env.ALLOW_BOARD_RESET === "1"`; otherwise 403 `reset_disabled` and no mutation.
+> - Confirm UX lives in the demo bead, not here.
+> - New firehose packet ids avoid duplicate collisions for local Emit after a board-only wipe.
+> 
+> ## Compatibility constraints
+> 
+> Existing ingest, OTLP, health, and board-upsert paths must keep current status codes and bodies. BoardState wire fields unchanged except `packets` becomes `[]` and producer returns to INITIAL after reset. CORS continues to honor `DEMO_ORIGINS`. Production deploys without `ALLOW_BOARD_RESET=1` must refuse reset. Do not require demo or firehose changes to close this bead.
+> 
+> ## Ordered steps
+> 
+> 1. Add `clearAllHistory` in store with tests for zero packet count after wipe.
+> 2. Add Agent board-reset handler: clear SQL, `setState` to INITIAL_BOARD_STATE with empty packets.
+> 3. Add Worker `POST /reset` that checks ALLOW_BOARD_RESET, then forwards to the board Agent.
+> 4. Set `ALLOW_BOARD_RESET: "1"` in wrangler.jsonc vars; document that production should omit or set `"0"`.
+> 5. Ensure CORS headers on /reset match other demo-facing routes.
+> 6. Add `test/reset.test.ts` for AC-1..AC-3; run targeted vitest including agent-identity guards.
+> 7. One-line note in PRD/DESIGN or CHANNELS only if reset becomes a documented local-demo control.
+> 
+> ## Dependencies
+> 
+> None blocking. Demo bead otel-judge-demo-drx consumes this API after it lands. Independent of latency / waiting-column beads already closed.
+> 
+> ## Edge cases
+> 
+> - ALLOW_BOARD_RESET unset, empty, or not `"1"`: 403, board untouched.
+> - Board Agent cold / empty already: 200, still empty INITIAL state.
+> - Concurrent ingest during reset: last-writer-wins on board chips is acceptable; do not lock the world.
+> - Per-service Agent SQL still has history after reset: intentional; do not fail the bead for that.
+> - In-flight workflows finishing after reset may attempt board upsert: chips can reappear for those packets; document as known local-demo quirk, do not cancel workflows in this bead.
+> - Non-POST methods on /reset: 405 or existing router not_found behavior — pick one and test it.
+> - Malformed internal board fetch failure: 502/500 with typed error, no partial setState without clear (prefer clear+setState in one Agent handler so external route is all-or-nothing from the client's view).
+> 
+> ## Plan-gap guidance
+> 
+> If Agents SDK cannot clear DO SQL from the Agent class safely, stop with PLAN-GAP naming the blocked API and keep the route gated-off. If board instance name differs from `BOARD_INSTANCE_NAME` / `"board"` in running code, stop and align to the constant rather than inventing a second board. If CORS preflight for POST /reset cannot reuse existing helpers, extend the shared CORS helper — do not fork a one-off allowlist. Do not widen wipe to all DOs without a new bead.
+> 
+
+### Acceptance criteria
+
+> ## Observable criteria
+> 
+> - AC-1 (proves-new): With ALLOW_BOARD_RESET=1, POST /reset returns 200 and subsequent board state has packets:[].
+> - AC-2 (proves-new): After reset, board SQL packet count is 0 (clearAllHistory).
+> - AC-3 (guards-existing): With ALLOW_BOARD_RESET unset/0, POST /reset returns 403 and board state is unchanged.
+> - AC-4 (guards-existing): Existing ingest/health routes still pass their tests.
+> 
+> ## Criterion checks
+> 
+> - AC-1: npx vitest run test/reset.test.ts
+> - AC-2: npx vitest run test/reset.test.ts
+> - AC-3: npx vitest run test/reset.test.ts
+> - AC-4: npx vitest run test/agent-identity.test.ts test/reset.test.ts
+> 
+> ## Targeted tests
+> 
+> npx vitest run test/reset.test.ts test/agent-identity.test.ts
 
 ## otel-judge-4i3
 
-**Epic: Ship compliance — sanitized prompt history** (epic, open)
+**Epic: Ship compliance — sanitized prompt history** (epic, closed)
 
 ### Description
 
@@ -97,7 +771,7 @@ Source: beads — the issue text that prompted each unit of work (title, descrip
 
 ## otel-judge-4i3.2
 
-**Publish the ship-gate checklist and the sanitized prompt history** (task, open)
+**Publish the ship-gate checklist and the sanitized prompt history** (task, closed)
 
 ### Description
 
@@ -254,7 +928,7 @@ Source: beads — the issue text that prompted each unit of work (title, descrip
 
 ## otel-judge-4i3.4
 
-**Group the prompt history by bead ids instead of any hyphenated word** (bug, in_progress)
+**Group the prompt history by bead ids instead of any hyphenated word** (bug, closed)
 
 ### Description
 
@@ -330,7 +1004,7 @@ Source: beads — the issue text that prompted each unit of work (title, descrip
 
 ## otel-judge-4uq
 
-**Epic: Scaffold the Wrangler project, Agent, and Worker door** (epic, open)
+**Epic: Scaffold the Wrangler project, Agent, and Worker door** (epic, closed)
 
 ### Description
 
@@ -633,7 +1307,7 @@ Source: beads — the issue text that prompted each unit of work (title, descrip
 
 ## otel-judge-4uq.5
 
-**Restore compatibility date 2026-09-01 when the Workers pool supports it** (task, in_progress)
+**Restore compatibility date 2026-09-01 when the Workers pool supports it** (task, deferred)
 
 ### Description
 
@@ -712,6 +1386,197 @@ Source: beads — the issue text that prompted each unit of work (title, descrip
 > ## Targeted tests
 > 
 > npx vitest run test/smoke.test.ts
+
+## otel-judge-55c
+
+**Publish jevLatencyMs and llamaLatencyMs on board chips** (feature, closed)
+
+### Description
+
+> ## Objective
+> 
+> Publish per-packet System One and System Two decision latencies on live board chips so the demo can show how long Jev and Llama each took.
+> 
+> ## Behavioral context
+> 
+> Before: Jev success already records `latency_ms` internally and in SQL `jev_runs`, but board chips omit it. Llama `JudgeResult` has no latency at all. After: each published chip carries optional `jevLatencyMs` and `llamaLatencyMs` (milliseconds, integers). Fields are omitted when that model did not run (e.g. Llama skipped after Jev failure). Field names are locked for the demo contract in who/otel-judge-demo.
+> 
+
+### Design
+
+> ## Readiness schema
+> 
+> v1
+> 
+> ## Scope
+> 
+> Measure Llama call latency; attach Jev and Llama latencies to board chips in published Agent/BoardState; tests. No demo UI work in this bead.
+> 
+> ## Non-goals
+> 
+> No firehose changes. No demo Inspector work (separate bead). No changing evaluate skip rules. No fabricating latencies on failure paths.
+> 
+> ## Concrete locations
+> 
+> - `src/llm/judge.ts` — add `latency_ms` to `JudgeResult`; time `env.AI.run`.
+> - `src/agent/boardState.ts` — optional `jevLatencyMs?: number` and `llamaLatencyMs?: number` on chip; set from `JevResult` / `JudgeResult` on milestones and completion.
+> - `src/agent/OtelJudgeAgent.ts` — ensure completion/milestone paths pass timings through.
+> - Persist optional: already have jev SQL latency; Llama latency may stay board-only unless a verdicts column already fits — prefer board publish first.
+> - Tests: judge unit + progress/board chip shape.
+> 
+> ## Resolved decisions
+> 
+> - Wire names: `jevLatencyMs` and `llamaLatencyMs` (camelCase, ms, non-negative integers).
+> - Omit field when that stage did not produce a timed success (Jev failure / Llama skipped → no llamaLatencyMs; missing Jev → no jevLatencyMs).
+> - Jev: reuse existing client `latency_ms` on success.
+> - Llama: wall-clock around `AI.run` only (not prompt build).
+> - Demo bead depends on these exact names.
+> 
+> ## Compatibility constraints
+> 
+> Optional fields; old demos ignore them. Keep compatibility_date / 4uq.5 parked. Workers vitest pool unchanged.
+> 
+> ## Ordered steps
+> 
+> 1. Add `latency_ms` to `JudgeResult` and measure in `judgeWithLlama`.
+> 2. Extend board packet type with `jevLatencyMs` / `llamaLatencyMs`.
+> 3. Populate from jev success and judge result on board updates; omit on skip/fail.
+> 4. Tests for judge timing field and chip shape on success vs Llama-skip.
+> 5. Run targeted vitest.
+> 
+> ## Dependencies
+> 
+> Builds on otel-judge-lxi / otel-judge-dk8 board chip paths. Unblocks demo latency UI bead. No parent epic required.
+> 
+> ## Edge cases
+> 
+> - Jev unavailable / Llama skipped: only omit llamaLatencyMs; jevLatencyMs only if a timed Jev attempt exists (optional: omit both if no successful Jev).
+> - Retries: report the successful attempt's latency (last success), not sum of retries — document in comment.
+> - Negative / non-finite: never publish.
+> 
+> ## Plan-gap guidance
+> 
+> If board chip updates cannot carry new fields without breaking adaptAgentState consumers beyond optional ignore, stop with PLAN-GAP. Do not rename to snake_case on the wire.
+> 
+
+### Acceptance criteria
+
+> ## Observable criteria
+> 
+> - AC-1 (proves-new): Successful Llama judge returns `latency_ms` >= 0 on `JudgeResult`.
+> - AC-2 (proves-new): Successful evaluate publishes chip with `jevLatencyMs` and `llamaLatencyMs` set from the timed calls.
+> - AC-3 (guards-existing): Llama-skipped / !jev.ok completion omits `llamaLatencyMs` (and does not invent one).
+> - AC-4 (guards-existing): Targeted vitest for judge and progress/board paths passes.
+> 
+> ## Criterion checks
+> 
+> - AC-1: npx vitest run test/judge.test.ts
+> - AC-2: npx vitest run test/progress.test.ts
+> - AC-3: npx vitest run test/progress.test.ts test/evaluate.test.ts
+> - AC-4: npx vitest run test/judge.test.ts test/progress.test.ts test/evaluate.test.ts
+> 
+> ## Targeted tests
+> 
+> npx vitest run test/judge.test.ts test/progress.test.ts test/evaluate.test.ts
+
+## otel-judge-63b
+
+**PROMPT_HISTORY: prepend sanitized Ortus harness before beads dump** (feature, closed)
+
+### Description
+
+> ## Objective
+> 
+> Lock and implement the ship disclosure format: `PROMPT_HISTORY.md` from `--from-beads` **prepends** a sanitized **Ortus harness** section (standing implement/verify/finalize prompts + Ortus version/backend pin) before the chronological beads dump.
+> 
+> ## Behavioral context
+> 
+> Before: `--from-beads` writes only bead [redacted]. After: document opens with `## Ortus harness (static)` (or equivalent) containing the harness prompts used for that ship, version-pinned, then `## Beads` as today. Raw grind JSONL remains non-ship. Sanitizer scrub rules (secrets, machine identity) apply to harness text too.
+> 
+> ## Cross-repo
+> 
+> Harness source of truth is the installed Ortus package prompts/profiles (e.g. site-packages `ortus/prompts` + grind profile strings). Prefer reading via a stable path or `ortus` CLI if one dumps profiles; do not vendor huge copies forever without a pin note. Demo/firehose repos may later reuse the same script pattern; this bead is **who/otel-judge** ship path.
+
+### Design
+
+> ## Readiness schema
+> 
+> v1
+> 
+> ## Scope
+> 
+> - Update `docs/SHIP.md` to lock: ship path = harness prepend + `--from-beads` beads body.
+> - Extend `scripts/prompt-history.mjs` `--from-beads` to prepend harness section.
+> - Collect harness text from Ortus install used on the machine (version via `ortus --version`); include claude implement/verify/finalize standing prompts (and goal-prompt / plan-prompt if they are part of grind).
+> - Sanitize harness with existing `sanitize()` / verifySanitized.
+> - Tests: from-beads output starts with harness heading; beads section still present; scrub still fails closed.
+> - README one-line if disclosure blurb needs the harness mention.
+> 
+> ## Non-goals
+> 
+> Do not make `--llm-compact` the ship path. Do not commit raw logs. Do not dump tool traces. Do not change bead field extraction. No firehose/demo work.
+> 
+> ## Concrete locations
+> 
+> - `docs/SHIP.md` — locked format
+> - `scripts/prompt-history.mjs` — `renderFromBeads` + harness loader
+> - `test/prompt-history.test.ts` — harness prepend + sanitize
+> - `prd/PRD.md` — one-line under Ship gate if normative
+> - Optional: `prompts/harness/` snapshot only if reading live Ortus install is too fragile — prefer live read + version pin in the markdown header
+> 
+> ## Resolved decisions
+> 
+> - Order: **Ortus harness first**, then beads chronological.
+> - Pin: record `ortus --version` (and backend name, e.g. claude) in the harness header.
+> - Source: installed Ortus prompts/profiles for that version; PLAN-GAP if unreadable.
+> - Scrub: same sanitizer as beads.
+> - Andy lock 2026-09-22 (this bead).
+> 
+> ## Compatibility constraints
+> 
+> `--from-beads` remains the only ship generator. Existing bead grouping/rendering stays. `--llm-compact` / log modes unchanged and still non-ship. CI/vitest node tests for prompt-history keep passing.
+> 
+> ## Ordered steps
+> 
+> 1. Document lock in `docs/SHIP.md`.
+> 2. Implement harness discovery (ortus version + prompt files / profile strings).
+> 3. Prepend sanitized harness markdown in `--from-beads` renderer.
+> 4. Tests for prepend + sanitizer on harness fixture.
+> 5. Dry-run generator; fix README blurb if needed.
+> 
+> ## Dependencies
+> 
+> None. Independent of demo UI beads.
+> 
+> ## Edge cases
+> 
+> - Ortus not on PATH in CI: fixture harness text in test; runtime ship on Andy’s machine uses live ortus.
+> - Prompt files missing in older ortus: fail with clear error naming missing paths (fail closed for ship).
+> - Huge prompts: include full standing prompts (disclosure completeness) unless size breaks GitHub UX — then truncate with noted omission only under PLAN-GAP.
+> 
+> ## Plan-gap guidance
+> 
+> If Ortus does not expose standing prompts as files and they only exist inside opaque binaries, stop with PLAN-GAP and either add an `ortus dump-harness` upstream bead or vendor a sanitized snapshot from the version pin. Do not scrape grind JSONL for harness.
+
+### Acceptance criteria
+
+> ## Observable criteria
+> 
+> - AC-1 (proves-new): `node scripts/prompt-history.mjs --from-beads --dry-run` output contains an Ortus harness section before the first bead section.
+> - AC-2 (proves-new): Harness section includes an Ortus version (or test fixture version) string.
+> - AC-3 (guards-existing): Bead [redacted] extraction still present after harness.
+> - AC-4 (guards-existing): Sanitizer refuses secret-shaped harness content; prompt-history tests pass.
+> 
+> ## Criterion checks
+> 
+> - AC-1: npx vitest run test/prompt-history.test.ts
+> - AC-2: npx vitest run test/prompt-history.test.ts
+> - AC-3: npx vitest run test/prompt-history.test.ts
+> - AC-4: npx vitest run test/prompt-history.test.ts
+> 
+> ## Targeted tests
+> 
+> npx vitest run test/prompt-history.test.ts
 
 ## otel-judge-686
 
@@ -1265,6 +2130,266 @@ Source: beads — the issue text that prompted each unit of work (title, descrip
 > ## Targeted tests
 > `npx vitest run test/fixtures.test.ts`
 
+## otel-judge-9xt
+
+**Soft prior deference: noise-majority coerces Llama to PASS unless disagrees** (feature, closed)
+
+### Description
+
+> ## Objective
+> 
+> Give System One greater weight on noise: when Jev’s priors are clearly noise-majority and Llama returns an incident severity without declaring disagreement, coerce the stored/published verdict severity to `noise` (board PASS) so chaos noise stops over-FLAGGing.
+> 
+> ## Behavioral context
+> 
+> Before: priors are prompt-only; Llama often returns sev1/sev2 on summary “scary” facts (e.g. status 500) while Jev shows ~99% noise, and the board paints FLAG. After: a post-parse soft deference step applies — if noise-majority priors and `disagrees_with_prior !== true`, rewrite `severity` to `noise` (label PASS). If `disagrees_with_prior === true`, keep Llama’s severity (override allowed). No confidence-number gates; no blocking Llama from running.
+> 
+> ## Cross-repo
+> 
+> Demo needs no change for PASS/FLAG mapping (already severity→label). Optional later: surface `disagrees_with_prior` in inspector (separate bead).
+
+### Design
+
+> ## Readiness schema
+> 
+> v1
+> 
+> ## Scope
+> 
+> Add a pure function `applyPriorDeference(verdict, jev)` (name flexible) called after `parseVerdict` / inside `judgeWithLlama` return path (or persist path — prefer judge module so board and SQL see the same coerced verdict). Define noise-majority from Jev answers: mass on `noise` for the `severity` question and/or affirmative mass on `noise_likely` ≥ **0.7** (lock 0.7 in code + tests). When majority holds and severity is `sev0`|`sev1`|`sev2` and `disagrees_with_prior` is not true, set severity to `noise`. Optionally append a short note to critique that deference applied. Vitest for coerce + no-coerce paths.
+> 
+> ## Non-goals
+> 
+> No hard veto that forbids disagreement. No confidence / needs_human gates. No demo UI bead. No firehose changes. No changing Jev questions. Do not skip Llama when priors exist.
+> 
+> ## Concrete locations
+> 
+> - `src/llm/judge.ts` and/or new `src/llm/priorDeference.ts` — pure deference helper + call site after parse
+> - `src/llm/parse.ts` — only if coercion belongs next to parse (prefer separate module)
+> - `test/prior-deference.test.ts` or extend `test/judge*.test.ts`
+> - One-line PRD note that System Two may be deferred to System One on noise-majority unless `disagrees_with_prior`
+> 
+> ## Resolved decisions
+> 
+> - Threshold: **0.7** on noise-relevant mass (document exact aggregation: prefer `max(severity.noise, noise_likely.yes-or-equivalent)`; if `noise_likely` choices are yes/no, use the yes key’s mass; if severity includes `noise`, use that mass — implement to match actual `QUESTIONS` keys/choices).
+> - Coerce only when `disagrees_with_prior !== true`.
+> - Coerce target severity: always `noise` (board PASS).
+> - Keep Llama’s other fields (summary/critique/next_action) unless a one-line critique suffix is added for auditability.
+> - Diamond preserved: explicit disagreement still FLAGs.
+> 
+> ## Compatibility constraints
+> 
+> Board `severityToLlamaLabel` unchanged. Ingest/workflow order unchanged. When deference does not apply, verdict bytes match today’s parse output. SQL `verdicts.severity` must store the **coerced** value (what the board shows). Existing tests that mock judge results stay valid if they already set disagrees appropriately.
+> 
+> ## Ordered steps
+> 
+> 1. Read `QUESTIONS` / Jev answer shape; implement `isNoiseMajority(jev, threshold=0.7)`.
+> 2. Implement `applyPriorDeference(verdict, jev)`.
+> 3. Call it once on the successful judge path before return/persist.
+> 4. Unit tests: noise 0.99 + sev1 + disagrees false → noise; same + disagrees true → sev1; below threshold → unchanged; jev not ok → unchanged.
+> 5. Run targeted vitest; brief PRD one-liner if severity semantics are normative there.
+> 
+> ## Dependencies
+> 
+> Works with closed otel-judge-lxi (judge only runs when jev.ok). Independent of reset beads. Do not block on demo.
+> 
+> ## Edge cases
+> 
+> - Flat priors (no outcome ≥ 0.7): no coerce.
+> - `severity` missing but `noise_likely` majority: still coerce if that question’s affirmative mass ≥ 0.7.
+> - `disagrees_with_prior` missing/falsey: treat as false (coerce).
+> - Severity already `noise` or `unknown`: leave as-is (`unknown` stays unknown — do not invent noise).
+> - jev.ok false: no deference (judge-without-priors path should not run post-lxi; if it does, no-op).
+> 
+> ## Plan-gap guidance
+> 
+> If `noise_likely` choice keys are not a clear yes/no mass, stop with PLAN-GAP naming the keys and pick the mass field that means “is noise” rather than guessing. Do not lower threshold below 0.5 in this bead. Do not hard-fail the workflow when coercing.
+
+### Acceptance criteria
+
+> ## Observable criteria
+> 
+> - AC-1 (proves-new): noise-majority Jev + Llama sev1/sev2 + disagrees_with_prior false → returned verdict.severity is `noise`.
+> - AC-2 (proves-new): same priors + sev1 + disagrees_with_prior true → severity unchanged (still sev1).
+> - AC-3 (guards-existing): below-threshold noise mass → no coerce.
+> - AC-4 (guards-existing): targeted judge/parse tests still pass.
+> 
+> ## Criterion checks
+> 
+> - AC-1: npx vitest run test/prior-deference.test.ts
+> - AC-2: npx vitest run test/prior-deference.test.ts
+> - AC-3: npx vitest run test/prior-deference.test.ts
+> - AC-4: npx vitest run test/prior-deference.test.ts test/judge.test.ts
+> 
+> ## Targeted tests
+> 
+> npx vitest run test/prior-deference.test.ts test/judge.test.ts
+
+## otel-judge-bkg
+
+**npm run typecheck fails on the choice-guard in jev/request.ts** (bug, closed)
+
+### Description
+
+> ## Objective
+> 
+> `npm run typecheck` exits clean on a tree with no other changes, so a type regression in a future change is visible instead of buried under a standing failure.
+> 
+> ## Behavioral context
+> 
+> Before: `npm run typecheck` ends with `src/jev/request.ts(155,11): error TS2367: This comparison appears to be unintentional because the types '4 | 5' and '0' have no overlap.` on a clean checkout of main, so the gate says nothing about the change under test. After: the command exits 0, and the defensive guard it flags either still runs or is replaced by something tsc accepts.
+
+### Design
+
+> ## Readiness schema
+> 
+> v1
+> 
+> ## Scope
+> 
+> Make `npm run typecheck` pass by resolving the TS2367 on the empty-choices guard, keeping the guard meaningful for the day a question is authored without choices.
+> 
+> ## Non-goals
+> 
+> No change to the System One wire request shape or to `QUESTIONS` content. No suppression by `@ts-expect-error` or `any`. No unrelated type cleanups elsewhere in the tree.
+> 
+> ## Concrete locations
+> 
+> - `src/jev/request.ts` — the `choices.length === 0` guard inside the `QUESTIONS` loop in `buildSystemOneRequest`, and the `SystemOneRequestError` it throws with code `question_without_choices`.
+> - `src/jev/questions.ts` — where `QUESTIONS` is frozen; its literal type is what narrows `choices.length` to `4 | 5`.
+> - `src/jev/types.ts` — `SystemOneWireQuestion`, the interface the guard is meant to be checked against.
+> 
+> ## Resolved decisions
+> 
+> The guard exists because the frozen literals are not the contract: it is checked against the interface so it still means something when a question is added with its choices missed. The fix is therefore to widen the declared type of `QUESTIONS` to that interface rather than to delete the guard.
+> 
+> ## Compatibility constraints
+> 
+> The request body sent to System One must not change; `test/jev-questions.test.ts` holds that shape through `buildSystemOneRequest`.
+> 
+> ## Ordered steps
+> 
+> 1. Reproduce with `npm run typecheck` and confirm the only error is TS2367 at `src/jev/request.ts`.
+> 2. Give `QUESTIONS` an explicit readonly array type of `SystemOneQuestion` so `length` widens to `number`.
+> 3. Re-run `npx vitest run test/jev-questions.test.ts` and the typecheck.
+> 
+> ## Dependencies
+> 
+> None — the guard has no callers outside `buildSystemOneRequest`.
+> 
+> ## Edge cases
+> 
+> A question authored with an empty `choices` array must still throw `question_without_choices`; a question of a non-choice type must still skip the guard.
+> 
+> ## Plan-gap guidance
+> 
+> If widening the type of `QUESTIONS` breaks an assertion that relies on its literal types, stop, record PLAN-GAP with the failing assertion, and route the choice between literal typing and the runtime guard to planning.
+
+### Acceptance criteria
+
+> ## Observable criteria
+> 
+> - AC-1 (proves-new): `npm run typecheck` exits 0 with no TS2367.
+> - AC-2 (guards-existing): the System One question and request tests still pass.
+> 
+> ## Criterion checks
+> 
+> - AC-1: npm run typecheck
+> - AC-2: npx vitest run test/jev-questions.test.ts
+> 
+> ## Targeted tests
+> 
+> npx vitest run test/jev-questions.test.ts
+
+## otel-judge-bs3
+
+**Llama replyText: extract Workers AI shape so unknown stops flooding FLAG** (bug, closed)
+
+### Description
+
+> ## Objective
+> 
+> Make System Two verdicts usable again when Workers AI returns a reply shape `replyText` does not currently read: stop storing empty-raw `unknown` severities that the board maps to FLAG for every scenario.
+> 
+> ## Behavioral context
+> 
+> Before: local Durable Object history shows 269/269 recent verdicts as `severity=unknown` with `raw_json` length 2 (`""`). Soft prior deference never applies (it only coerces sev0/1/2). `severityToLlamaLabel` maps unknown ? flag, so healthy / demo_mix / chaos all land in the FLAG column even when Jev says ~93% noise and Emit wiring is correct.
+> 
+> After: `judgeWithLlama` extracts the model text from the live Workers AI response shape for `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (and close cousins), stores non-empty raw when the model answered, and parses a real severity when JSON is present. Empty or unreadable replies remain `unknown` but are observable (non-empty diagnostic raw or explicit log/reason) so operators can tell parse failure from "model said FLAG".
+
+### Design
+
+> ## Readiness schema
+> 
+> v1
+> 
+> ## Scope
+> 
+> - Fix or extend `replyText` in `src/llm/judge.ts` so it accepts the actual Workers AI return shape(s) for the configured Llama model (today only `string` and `{ response: string }` are read; everything else becomes `""`).
+> - Add focused unit tests for alternate shapes (e.g. nested `result.response`, array/token chunks, `response` as non-string) without requiring a live AI binding.
+> - Optionally: when extracted text is empty after a successful `AI.run`, attach a short diagnostic into `raw` (shape keys / typeof) so history shows why parse degraded ? must not leak secrets.
+> - Keep `parseVerdict`, prior deference, and board label mapping behavior for real severities unchanged.
+> 
+> ## Non-goals
+> 
+> - Rewriting the Llama severity matrix prompt (otel-judge-s5s).
+> - Changing soft prior deference thresholds (otel-judge-9xt).
+> - Demo Scenario dropdown / firehose emit wiring.
+> - Changing `severityToLlamaLabel(unknown) ? flag` as the primary fix (fix extraction first; a separate follow-up may map empty-unknown to a clearer board state if still wanted).
+> 
+> ## Concrete locations
+> 
+> - `src/llm/judge.ts` ? `replyText`, `judgeWithLlama`
+> - `test/judge.test.ts` ? stubs today return `{ response: VERDICT_JSON }`; extend shapes
+> - `src/llm/parse.ts` ? only if raw diagnostic needs a documented empty-parse path (prefer not)
+> 
+> ## Resolved decisions
+> 
+> - Evidence from [redacted-machine] local DO SQLite: all recent verdicts unknown with empty raw; Llama latency still ~seconds, so `AI.run` is returning *something* `replyText` discards.
+> - Root fix is reply extraction, not scenario diversity or deference.
+> - Prefer supporting documented Workers AI chat/text shapes over logging-only.
+> 
+> ## Compatibility constraints
+> 
+> - Verdict JSON schema fields stay stable.
+> - No new Worker bindings required.
+> - Do not break existing `{ response: string }` stubs/tests.
+> 
+> ## Ordered steps
+> 
+> 1. Reproduce extraction failure offline: feed the live-shaped fixture (or capture one `JSON.stringify` of `AI.run` result keys in wrangler logs once) into `replyText`.
+> 2. Extend `replyText` to cover the live shape(s); keep first-class string and `{ response: string }`.
+> 3. Add vitest cases for each accepted shape and for unrecognized ? empty string (or diagnostic raw policy if chosen).
+> 4. Run `npx vitest run test/judge.test.ts`; fix failures.
+> 5. Note in close comment: after deploy/restart, Emit healthy should produce non-unknown severity when the model returns JSON (PASS when deference applies).
+> 
+> ## Dependencies
+> 
+> None ? land independently of demo/firehose beads.
+> 
+> ## Edge cases
+> 
+> - `response` is an array of token strings ? join if that is the live shape.
+> - Nested `{ result: { response: "..." } }` ? unwrap if observed.
+> - Truly empty model output ? remain unknown; do not invent severity.
+> - `disagrees_with_prior` parsing unchanged.
+> 
+> ## Plan-gap guidance
+> 
+> If the live Workers AI binding returns a shape that cannot be identified from code + one local capture (no account entitlement / AI binding available in the grind sandbox), stop with PLAN-GAP naming the capture step an operator must run (`wrangler` log of `typeof`/keys of `AI.run` result) ? do not invent a severity from Jev alone.
+
+### Acceptance criteria
+
+> ## Observable criteria
+> 
+> - AC-1: `rg -n "replyText|response" src/llm/judge.ts` shows extraction beyond a lone `{ response: string }` branch (or an exported helper covering multiple shapes).
+> - AC-2: `npx vitest run test/judge.test.ts` passes.
+> - AC-3: `rg -n "response: VERDICT_JSON|severity" test/judge.test.ts` still covers the existing `{ response: string }` happy path expecting a non-unknown severity.
+> 
+> ## Targeted tests
+> 
+> npx vitest run test/judge.test.ts
+
 ## otel-judge-crm
 
 **Stop the whole-suite run from timing out a different test on each pass** (bug, closed)
@@ -1422,6 +2547,105 @@ Source: beads — the issue text that prompted each unit of work (title, descrip
 > ## Targeted tests
 > 
 > `npx vitest run test/prompt-history.test.ts -t llm-compact`
+
+## otel-judge-dk8
+
+**Publish jevUnavailable on board chips when Llama is skipped** (feature, closed)
+
+### Description
+
+> ## Objective
+> 
+> Publish optional boolean `jevUnavailable: true` on board packets when System One failed and System Two was skipped (otel-judge-lxi), so otel-judge-demo's live board can show "Jev unavailable — Llama skipped" instead of "Awaiting Llama verdict".
+> 
+> ## Behavioral context
+> 
+> Before: after otel-judge-lxi, evaluate can end at jev with no verdict, but published BoardState chips do not carry `jevUnavailable`. The demo already reads that flag via `isLlamaSkipped()` / `adaptPacket()`, and mock fixture pkt-0008 sets it; live packets that stopped at Jev look in-flight forever. After: when `runEvaluate` returns without a verdict because `!jev.ok`, the chip in published Agent/board state sets `jevUnavailable: true` (absent otherwise). Field name is locked by the demo contract.
+> 
+> ## Cross-repo
+> 
+> Demo follow-up bead: otel-judge-demo-cur (who/otel-judge-demo). Demo UI already landed in otel-judge-demo-0g9.
+> 
+
+### Design
+
+> ## Readiness schema
+> 
+> v1
+> 
+> ## Scope
+> 
+> Set `jevUnavailable: true` on the published board packet when evaluation finishes with System One unavailable and no Llama verdict. Wire through boardState helpers / OtelJudgeAgent completion + milestone paths. Add unit tests. No demo repo edits in this bead beyond documenting the contract in a comment if useful.
+> 
+> ## Non-goals
+> 
+> No new board column. No change to evaluate skip logic (already in otel-judge-lxi). No disagrees_with_prior UI. No fabricating priors. No renaming the field (must remain `jevUnavailable`).
+> 
+> ## Concrete locations
+> 
+> - `src/agent/boardState.ts` — Packet chip type / `packetFromOutcome` / milestone apply: set or clear `jevUnavailable`.
+> - `src/agent/OtelJudgeAgent.ts` — `onWorkflowComplete` / `applyBoardMilestone` when result has `failed_at: "jev"` or missing verdict after jev failure.
+> - `src/workflow/evaluate.ts` — already returns without verdict when `!jev.ok`; consumers must publish the flag.
+> - Tests under `test/` covering board chip shape when jev fails vs succeeds.
+> - Contract mirror: demo `Packet.jevUnavailable` / `isLlamaSkipped` in who/otel-judge-demo.
+> 
+> ## Resolved decisions
+> 
+> - Field: optional boolean `jevUnavailable`, publish literal `true` only when Jev was unavailable and Llama was skipped; omit the field otherwise (do not send `false`).
+> - Cause on the wire: Judge reports Jev unavailable; demo derives Llama skipped.
+> - A present Llama verdict wins: never set the flag if `llama` / verdict exists on the chip.
+> - In-flight jev (still evaluating) must NOT set the flag.
+> - Demo bead otel-judge-demo-cur tracks live verification; this Judge bead owns the publisher.
+> 
+> ## Compatibility constraints
+> 
+> Optional field; old demos ignore it. Existing BoardState without the field stays valid. Keep Workers/vitest compatibility_date as-is (do not reopen 4uq.5).
+> 
+> ## Ordered steps
+> 
+> 1. Locate where board chips are built/updated on workflow complete and jev milestone.
+> 2. When evaluate result has no verdict and jev failed/unavailable, set `jevUnavailable: true` on that packet chip in published board state.
+> 3. Ensure happy-path chips omit the field; ensure in-flight jev milestones omit it.
+> 4. Add/extend vitest for chip shape on jev-failure completion vs success.
+> 5. Comment or note linking demo contract (`jevUnavailable` / otel-judge-demo-cur).
+> 6. Run targeted vitest.
+> 
+> ## Dependencies
+> 
+> Requires closed otel-judge-lxi (skip Llama when !jev.ok). Unblocks live verification on otel-judge-demo-cur. Parent: none.
+> 
+> ## Edge cases
+> 
+> - Jev ok, Llama running/complete: no flag.
+> - Jev failed after retries, no verdict: flag true, stage stays jev.
+> - Malformed jev then skip: flag true.
+> - Re-evaluate / duplicate packet id: last write wins; flag cleared if a later run produces a verdict.
+> - Board mirror / shared board instance must receive the same flag as the per-service chip.
+> 
+> ## Plan-gap guidance
+> 
+> If board publication paths cannot express a finished-without-verdict chip without a larger BoardState redesign, stop with PLAN-GAP naming the symbols, leave evaluate skip unchanged, and route to human. Do not invent a fifth stage or rename the flag.
+> 
+
+### Acceptance criteria
+
+> ## Observable criteria
+> 
+> - AC-1 (proves-new): When evaluate completes with !jev.ok and no verdict, published board packet includes `jevUnavailable: true` and no llama verdict.
+> - AC-2 (proves-new): In-flight jev milestone (evaluate not finished) does not set `jevUnavailable`.
+> - AC-3 (guards-existing): Successful Jev→Llama completion omits `jevUnavailable` and still carries llama/verdict as today.
+> - AC-4 (guards-existing): Targeted vitest for board/evaluate/agent paths passes.
+> 
+> ## Criterion checks
+> 
+> - AC-1: npx vitest run on board/evaluate/agent tests covering jev failure completion
+> - AC-2: npx vitest run covering jev milestone without completion flag
+> - AC-3: npx vitest run covering happy-path board chip
+> - AC-4: npx vitest run on the touched test files
+> 
+> ## Targeted tests
+> 
+> npx vitest run on boardState / evaluate / agent tests touched by this bead.
 
 ## otel-judge-h3c
 
@@ -1599,6 +2823,85 @@ Source: beads — the issue text that prompted each unit of work (title, descrip
 > 
 > ## Targeted tests
 > `npx vitest run test/otlp-adapter.test.ts`
+
+## otel-judge-i8p
+
+**Board LlamaVerdict: publish critique for sidebar why** (task, closed)
+
+### Description
+
+> ## Objective
+> 
+> Publish Llama's `critique` (and keep `summary` as `rationale`) on the board `LlamaVerdict` so the demo sidebar can show why System Two chose its severity.
+> 
+> ## Behavioral context
+> 
+> Before: `llamaFromVerdict` maps only `summary` ? `rationale` and `next_action` ? `actions`. The prompt's `critique` field is stored in SQL but never mirrored to BoardState, so the inspector cannot show the evidence/prior reasoning even when the model wrote it.
+> 
+> After: board `LlamaVerdict` carries `critique: string` (empty string when absent). `rationale` remains `summary`. Existing clients that ignore unknown fields keep working; demo will read `critique` in a follow-on bead.
+
+### Design
+
+> ## Readiness schema
+> 
+> v1
+> 
+> ## Scope
+> 
+> - Extend `LlamaVerdict` in `src/agent/boardState.ts` with `critique: string`.
+> - Set it in `llamaFromVerdict` from `verdict.critique`.
+> - Update Judge-side types/tests that construct `LlamaVerdict` / assert board chips.
+> - Do not change prompt schema fields; do not rename `rationale`.
+> 
+> ## Non-goals
+> 
+> - Demo UI rendering (separate demo bead).
+> - Changing soft prior deference or replyText extraction.
+> - Publishing `confidence_note` in this task (optional follow-up).
+> 
+> ## Concrete locations
+> 
+> - `src/agent/boardState.ts` ? `LlamaVerdict`, `llamaFromVerdict`
+> - Nearest tests under `test/` that touch board llama chips or `llamaFromVerdict`
+> 
+> ## Resolved decisions
+> 
+> - `rationale` stays the one-sentence `summary`; `critique` is the longer why.
+> - Empty critique is `""`, not omitted, so the wire shape is stable.
+> 
+> ## Compatibility constraints
+> 
+> - Additive field only; severity?label mapping unchanged.
+> - SQL `verdicts.critique` already exists; no migration.
+> 
+> ## Ordered steps
+> 
+> 1. Add `critique` to `LlamaVerdict` and `llamaFromVerdict`.
+> 2. Fix/extend focused unit tests.
+> 3. Run bounded vitest for the touched file(s).
+> 
+> ## Dependencies
+> 
+> None ? independent of demo UI bead (demo may land after).
+> 
+> ## Edge cases
+> 
+> - Deference note appended to critique must still flow to the board (it mutates `verdict.critique` before `llamaFromVerdict`).
+> 
+> ## Plan-gap guidance
+> 
+> If BoardState is generated from an external schema not in this repo, stop with PLAN-GAP naming that source ? do not fork a second LlamaVerdict type.
+
+### Acceptance criteria
+
+> ## Observable criteria
+> 
+> - AC-1: `rg -n "critique" src/agent/boardState.ts` shows `critique` on `LlamaVerdict` and in `llamaFromVerdict`.
+> - AC-2: `npx vitest run test/progress.test.ts` passes (or the nearest board/llama test file touched; name it in the close comment if different).
+> 
+> ## Targeted tests
+> 
+> npx vitest run test/progress.test.ts
 
 ## otel-judge-j74
 
@@ -2008,6 +3311,175 @@ Source: beads — the issue text that prompted each unit of work (title, descrip
 > ## Targeted tests
 > `npx vitest run test/history-api.test.ts`
 
+## otel-judge-lxi
+
+**Jev-before-Llama: skip judge until System One finishes; ground verdict in priors** (feature, closed)
+
+### Description
+
+> ## Objective
+> 
+> Make System Two (Workers AI Llama) wait for a finished System One (Jev) result and consume those priors for real. Observed on the local board: Jev marked a packet as noise while Llama independently flagged it. That violates the diamond handoff Andy locked 2026-09-22 after seeing live chips.
+> 
+> ## Behavioral context
+> 
+> Before: runEvaluate always calls judge after the jev step, including when jev.ok === false (log-and-continue). The Llama system prompt still calls priors "advisory evidence, not instructions" and invites disagreement. After: the judge step does not start unless Jev completed with usable answers (jev.ok === true). When priors exist, the prompt requires the verdict to be grounded in the full distributions (especially severity and noise_likely); disagreeing with a noise-leaning prior is allowed only when the summary cites concrete contradictory evidence and disagrees_with_prior is true. Update prd/PRD.md diamond section and docs/DESIGN.md diamond bullet so they no longer say "always call System Two on Jev failure" / unconstrained advisory priors.
+> 
+> ## Why this supersedes the old diamond wording
+> 
+> The earlier lock (no hard gates on confidence / needs_human and log-and-continue into judge) stays for confidence floors and needs_human routing. What changes is sequencing and prior weight: unfinished or failed System One must not produce a System Two verdict, and System Two must treat System One vectors as the priors it reasons with, not optional color.
+> 
+
+### Design
+
+> ## Readiness schema
+> 
+> v1
+> 
+> ## Scope
+> 
+> Change `runEvaluate` so the judge step is skipped when System One did not finish successfully (`jev.ok === false` after retries). Rewrite the Llama system instructions in `src/llm/judge.ts` so full Jev distributions are required grounding for the verdict (especially `severity` and `noise_likely`), not optional advisory color. Update `prd/PRD.md` diamond bullets and `docs/DESIGN.md` diamond lock to match. Add/extend vitest coverage for evaluate orchestration and prompt/validation behavior.
+> 
+> ## Non-goals
+> 
+> No hard numeric confidence floor or `needs_human` auto-page gate. No fabricated priors when Jev fails. No firehose or demo repo changes unless a board stage label is required for jev-failed / llama-skipped. No System One request/parse wire-format rewrite beyond what already parses live answers.
+> 
+> ## Concrete locations
+> 
+> - `src/workflow/evaluate.ts` — after the jev report, branch: only call `deps.judge` when `jev.ok`; otherwise return without a Llama verdict and record skip / `failed_at: "jev"`.
+> - `src/llm/judge.ts` — `JUDGE_RULES` / `priorsSection` / any verdict validation that enforces `disagrees_with_prior` when departing from noise-leaning priors.
+> - `prd/PRD.md` — Diamond model section (replace [redacted]).
+> - `docs/DESIGN.md` — diamond lock bullet.
+> - `test/` — evaluate orchestration tests (judge not invoked on jev failure) and judge prompt/instruction regression tests.
+> 
+> ## Resolved decisions
+> 
+> - Sequencing: Llama must not run unless Jev completed with `ok: true`. Failed/unavailable System One yields no System Two verdict (no log-and-continue into judge).
+> - Prior weight: when priors exist, full distributions travel into the prompt; verdict must be grounded in them. Disagreeing with a noise-leaning prior requires `disagrees_with_prior: true` and a critique that cites concrete summary contradictions.
+> - Confidence / `needs_human` remain non-gating fields (advisory), consistent with the earlier diamond lock except for the sequencing and prior-weight change Andy locked 2026-09-22.
+> - Prefer a typed evaluate result that records Llama skipped (e.g. `failed_at: "jev"` and no fabricated verdict) over inventing a placeholder Llama response.
+> - Board: stay on jev / failed path without inventing a Llama chip when skipped; document the chosen stage label in the PRD note if a new stage is introduced.
+> 
+> ## Compatibility constraints
+> 
+> Cloudflare Workers + Agents Workflow step.do shape unchanged. Existing `JevResult` / `JudgeResult` types stay; if `EvaluateResult.verdict` becomes optional, update callers (`persist`, `onWorkflowComplete`, board helpers) in the same change. Vitest Workers pool and current `compatibility_date` stay as-is (do not reopen `otel-judge-4uq.5`). No new external APIs.
+> 
+> ## Ordered steps
+> 
+> 1. Update `prd/PRD.md` and `docs/DESIGN.md` diamond text to the new sequencing + prior-weight rules.
+> 2. Change `runEvaluate` to skip `deps.judge` when `!jev.ok`; adjust `EvaluateResult` typing and persist/board completion paths so they do not require a fake verdict.
+> 3. Rewrite Llama prior instructions so distributions are required grounding; keep full vectors in the prompt.
+> 4. Add validation or prompt-regression tests for noise-leaning priors vs flag-style verdicts (`disagrees_with_prior`).
+> 5. Extend evaluate tests: assert `judge` is not called on jev failure; assert it is called with the jev result on success.
+> 6. Run targeted vitest for evaluate + judge; fix callers until green.
+> 
+> ## Dependencies
+> 
+> Builds on closed epics `otel-judge-j74` (evaluate workflow) and `otel-judge-smu` (Jev client). No blockers. Parent: none (standalone P0 feature). Consumers: local board triangle and future CF submit reviewers reading the PRD.
+> 
+> ## Edge cases
+> 
+> - Jev returns non-retryable failure (missing key, malformed): skip Llama immediately after reporting jev milestone.
+> - Jev retries exhaust on retryable errors: same skip path; do not call Llama with a synthetic prior.
+> - Jev ok but severity mass on `noise` while summary looks alarming: Llama may disagree only with `disagrees_with_prior: true` and cited evidence; otherwise severity/next_action should follow the noise-leaning prior.
+> - Persist/board when verdict absent: must not throw or write null severity as if Llama spoke.
+> - Existing tests that assumed log-and-continue into judge must be updated, not deleted without replacement.
+> 
+> ## Plan-gap guidance
+> 
+> If making `verdict` optional forces a large persist/board redesign that cannot stay in-repo without inventing a placeholder Llama row, stop with PLAN-GAP naming the callers, leave evaluate skip implemented behind a typed result, and route to human. Do not reintroduce fabricated priors or call Llama without `jev.ok` to unblock.
+> 
+
+### Acceptance criteria
+
+> ## Observable criteria
+> 
+> - AC-1 (proves-new): When System One returns ok:false after its retry budget, runEvaluate does not call judge / judgeWithLlama, and the result records that Llama was skipped because Jev did not finish successfully.
+> - AC-2 (proves-new): When System One returns ok:true, Llama is invoked with the full answer distributions in the prompt (not argmax-only), and the system instructions require grounding the verdict in those priors.
+> - AC-3 (proves-new): Prompt (and validation if present) requires that a flag/page-style verdict against a noise-leaning prior set disagrees_with_prior:true with critique citing summary contradictions; covered by a regression test on the instruction text and/or validator.
+> - AC-4 (proves-new): prd/PRD.md and docs/DESIGN.md state Llama waits for successful Jev and consumes vectors as priors; they no longer require calling System Two after Jev failure.
+> - AC-5 (guards-existing): Vitest for evaluate + judge paths passes; failure path never fabricates priors.
+> 
+> ## Criterion checks
+> 
+> - AC-1: npx vitest run on evaluate tests covering jev failure skip
+> - AC-2: npx vitest run on judge tests covering prior distributions in prompt
+> - AC-3: npx vitest run on judge tests covering noise / disagrees_with_prior
+> - AC-4: rg confirms PRD/DESIGN no longer require System Two after Jev failure; new wording present
+> - AC-5: npx vitest run evaluate + judge + jev-degraded tests
+> 
+> ## Targeted tests
+> 
+> npx vitest run on the evaluate and judge test files touched by this bead.
+> 
+
+## otel-judge-s5s
+
+**Llama prompt: criticality x failure-class severity matrix** (task, closed)
+
+### Description
+
+> ## Objective
+> Update the Llama (System Two) judge prompt so severity uses an explicit criticality ? failure-class matrix: 4xx/client noise ? low/noise; optional-path 5xx ? flag or pass; core 5xx ? flag; critical-path (checkout/pay/auth) 5xx or high burn ? escalate.
+> 
+> ## Behavioral context
+> Before: Llama often FLAG-everything on chaos-like packets because summaries look uniformly broken. After: the prompt teaches tiered severity using service/span/alert_labels criticality signals from firehose demo_mix, without making Jev own the matrix.
+
+### Design
+
+> ## Readiness schema
+> v1
+> 
+> ## Scope
+> - Edit the System Two judge prompt in `src/llm/judge.ts` to include the criticality ? failure-class decision matrix.
+> - Keep `src/llm/priorDeference.ts` coercion rules unchanged unless a one-line cross-reference is required.
+> - Extend the smallest existing judge/parse/deference test that already covers severity instructions.
+> 
+> ## Non-goals
+> - Firehose scenario diversity (owned by otel-judge-firehose-f6b).
+> - New packet schema fields for HTTP status or criticality enums.
+> - Rewriting the Jev question set as the primary home of the matrix.
+> 
+> ## Concrete locations
+> - `src/llm/judge.ts` ? System Two prompt strings and severity guidance.
+> - `src/llm/priorDeference.ts` ? soft deference remains separate.
+> - `src/llm/parse.ts` ? verdict JSON fields stay stable.
+> - Tests: nearest existing file under `test/` or `src/llm/` covering judge prompt/parse (create `src/llm/judge.test.ts` only if none exists).
+> 
+> ## Resolved decisions
+> - Decision matrix lives in the Llama prompt, not Jev and not firehose.
+> - Jev remains priors/distributions; firehose only supplies distinguishable events.
+> - Criticality is inferred from packet `service`, `top_spans`, and `alert_labels` already on the wire.
+> 
+> ## Compatibility constraints
+> - Keep JSON verdict schema fields stable (`severity`, `disagrees_with_prior`, critique, etc.).
+> - Do not require new Worker bindings.
+> 
+> ## Ordered steps
+> 1. Locate current severity / prior-disagreement instructions in `src/llm/judge.ts`.
+> 2. Insert a concise criticality ? failure-class matrix.
+> 3. Extend or add a focused test asserting the matrix guidance is present.
+> 4. Run the bounded vitest command; fix failures.
+> 
+> ## Dependencies
+> - Prefer landing after firehose `otel-judge-firehose-f6b` so demos emit criticality-tagged packets; prompt text can ship independently.
+> 
+> ## Edge cases
+> - Missing criticality labels: fall back to service/span name heuristics, else prior severity only.
+> - Soft deference still applies when noise-majority and no declared disagreement.
+> 
+> ## Plan-gap guidance
+> If the judge prompt is generated from an external template not in this repo, stop with PLAN-GAP naming the real source file ? do not invent a second prompt authority.
+
+### Acceptance criteria
+
+> ## Observable criteria
+> - AC-1: Llama judge prompt text includes critical-path vs optional-path severity guidance. `rg -n "critical_path|optional|best_effort|checkout" src/llm/judge.ts`
+> - AC-2: Focused judge-related vitest file passes. `npx vitest run test/judge.test.ts -q`
+> 
+> ## Targeted tests
+> `npx vitest run test/judge.test.ts -q`
+
 ## otel-judge-smu
 
 **Epic: Jev System One client and questions map** (epic, closed)
@@ -2250,3 +3722,100 @@ Source: beads — the issue text that prompted each unit of work (title, descrip
 > 
 > ## Targeted tests
 > `npx vitest run test/jev-degraded.test.ts`
+
+## otel-judge-tev
+
+**Board columns show waiting stage (Llama wait leaves jev column)** (feature, closed)
+
+### Description
+
+> ## Objective
+> 
+> Board swimlane columns show where a packet is waiting or being worked now — not the last step that already finished.
+> 
+> ## Behavioral context
+> 
+> Before: progress milestones are reported after a step completes, so a packet that finished Jev and is waiting on Llama still sits in the `jev` column until the judge step finishes. After: as soon as System One succeeds and System Two is about to run (or is running), the chip moves to `llama`. While waiting for Jev after ingest/summarize, the chip is in `jev`. After Llama completes, `verdict`. Llama-skipped / Jev-failed chips stay on `jev` with `jevUnavailable` as today (finished there, not waiting on Llama).
+> 
+> ## Demo note
+> 
+> Demo columns already bind to `packet.stage`; no demo UI change required if Judge publishes the waiting-stage correctly.
+> 
+
+### Design
+
+> ## Readiness schema
+> 
+> v1
+> 
+> ## Scope
+> 
+> Change evaluate progress / board milestone stage mapping so chips enter the column for the **next** active wait (or current work), not the completed step. Update tests. Document in PRD/DESIGN one line if stage semantics are normative.
+> 
+> ## Non-goals
+> 
+> No new fifth column. No demo-only fake stage advances. No change to jevUnavailable skip semantics. No firehose changes. No latency field work (separate beads).
+> 
+> ## Concrete locations
+> 
+> - `src/workflow/evaluate.ts` — `STEP_STAGES` / milestone `stage` after summarize vs after jev vs after judge; possibly report a "entering judge" milestone before `deps.judge` with stage `judging` / board `llama`.
+> - `src/agent/boardState.ts` — `stageFromEvaluate` / `applyBoardMilestone` mapping to `ingest | jev | llama | verdict`.
+> - `src/agent/OtelJudgeAgent.ts` — if completion forces stage independently.
+> - `test/progress.test.ts` / `test/evaluate.test.ts` — assert chip in `llama` after successful jev milestone when judge will run; assert skip stays `jev`.
+> 
+> ## Resolved decisions
+> 
+> - Column meaning: **waiting/working here**, not **last completed**.
+> - After successful Jev, before/during Llama: stage `llama`.
+> - After successful Llama: stage `verdict`.
+> - After ingest/summarize, before Jev completes: stage `jev` (waiting on System One).
+> - Jev failed / Llama skipped: remain `jev` with `jevUnavailable: true` (terminal, not waiting on Llama).
+> - Prefer an explicit pre-judge progress milestone over leaving the chip on `jev` until judge returns.
+> 
+> ## Compatibility constraints
+> 
+> Same four `PACKET_STAGES`. Optional fields unchanged. Demo adapts stage strings already.
+> 
+> ## Ordered steps
+> 
+> 1. Document target stage transitions in a short comment next to STEP_STAGES / board mapper.
+> 2. After successful jev report, publish stage that maps to board `llama` before calling judge (or change post-jev milestone stage to the waiting-llama stage).
+> 3. Keep skip path on `jev` + jevUnavailable.
+> 4. Update progress/evaluate tests for waiting-column behavior.
+> 5. One-line PRD/DESIGN note if stage semantics are specified there.
+> 6. Run targeted vitest.
+> 
+> ## Dependencies
+> 
+> Works with otel-judge-dk8 (jevUnavailable) and otel-judge-lxi (skip Llama). Independent of latency beads 55c / demo-pon.
+> 
+> ## Edge cases
+> 
+> - Judge retries: chip stays in `llama` for the whole judge step.
+> - Summarize failure: do not advance into jev/llama falsely.
+> - Concurrent packets: each chip independent.
+> 
+> ## Plan-gap guidance
+> 
+> If Agents workflow cannot emit a pre-judge milestone without double-counting durable steps, set the post-jev milestone stage to `llama`/`judging` instead and document that `jev` column means "Jev in progress or Jev-terminal-skip" only. Stop with PLAN-GAP if that still cannot distinguish in-flight Jev from waiting-Llama without a new field.
+> 
+
+### Acceptance criteria
+
+> ## Observable criteria
+> 
+> - AC-1 (proves-new): After successful Jev, before Llama returns, published chip `stage` is `llama` (waiting/working on System Two), not `jev`.
+> - AC-2 (proves-new): After Llama completes, chip `stage` is `verdict`.
+> - AC-3 (guards-existing): Jev failure / Llama skip leaves chip on `jev` with `jevUnavailable: true` when applicable.
+> - AC-4 (guards-existing): Targeted vitest for progress/evaluate passes.
+> 
+> ## Criterion checks
+> 
+> - AC-1: npx vitest run test/progress.test.ts
+> - AC-2: npx vitest run test/progress.test.ts
+> - AC-3: npx vitest run test/progress.test.ts test/evaluate.test.ts
+> - AC-4: npx vitest run test/progress.test.ts test/evaluate.test.ts
+> 
+> ## Targeted tests
+> 
+> npx vitest run test/progress.test.ts test/evaluate.test.ts
