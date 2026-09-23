@@ -33,9 +33,19 @@ export type JevDistribution = Record<string, number>;
 
 export type LlamaVerdictLabel = "pass" | "flag" | "escalate";
 
+/**
+ * What System Two concluded, in the two lengths a board reads at.
+ *
+ * `rationale` is the one-sentence summary the chip itself carries; `critique` is
+ * the longer reasoning behind the grade, which the demo opens in a sidebar
+ * rather than crowding onto a chip. It is written as an empty string when the
+ * judge produced none, never omitted, so a client reading it does not have to
+ * tell a quiet verdict apart from an older wire shape.
+ */
 export interface LlamaVerdict {
   label: LlamaVerdictLabel;
   rationale: string;
+  critique: string;
   actions: string[];
 }
 
@@ -198,11 +208,20 @@ export function severityToLlamaLabel(severity: VerdictSeverity | string): LlamaV
   }
 }
 
+/**
+ * The board's reading of a verdict.
+ *
+ * The critique is taken as it stands at this moment rather than from the
+ * model's reply, which is what carries a deference note into the sidebar: the
+ * note is appended to the critique before the verdict reaches here, so the
+ * board says the grade was System One's on exactly the runs where it was.
+ */
 export function llamaFromVerdict(verdict: Verdict): LlamaVerdict {
   const actions = verdict.next_action.trim() === "" ? [] : [verdict.next_action];
   return {
     label: severityToLlamaLabel(verdict.severity),
     rationale: verdict.summary,
+    critique: verdict.critique,
     actions,
   };
 }

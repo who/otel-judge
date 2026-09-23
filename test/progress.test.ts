@@ -158,6 +158,7 @@ describe("a packet being judged", () => {
       expect(chip?.llama).toEqual({
         label: "flag",
         rationale: "Error rate tripled shortly after the 2.4.1 rollout.",
+        critique: "The priors put most of their mass on a deploy cause and the spans agree.",
         actions: ["Roll back to 2.4.0 and re-measure the error rate."],
       });
       // A judged packet says nothing about a skip, so the marker stays off the wire.
@@ -203,9 +204,10 @@ describe("a packet being judged", () => {
 
       const observed = [...step.snapshots, { ...instance.state }];
 
-      // Prompt / raw / confidence stay out of the broadcast; critique stays in SQL.
+      // The critique is published now — it is the why the sidebar shows. What
+      // stays out is what a viewer has no business reading: the standing
+      // instructions, the unparsed reply, the judge's hedge, and the log lines.
       const forbidden = [
-        VERDICT.verdict.critique,
         VERDICT.verdict.confidence_note,
         VERDICT.verdict.raw,
         VERDICT.prompt.system,
