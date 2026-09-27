@@ -1,0 +1,20 @@
+// README flow: traffic in, a verdict out, a board you can watch.
+style dim   text: (color: muted)
+style repo  text: (size: small, color: muted)
+default edge  line: (path: square, corners: rounded)
+
+node judge    "otel-judge on Cloudflare" (at: top-right)
+node judge.door  "Worker door / [dim]HMAC verify, dedupe[/dim]"
+node judge.jev   "Jev / [dim]System One priors[/dim]"             right of judge.door
+node judge.llama "Llama 3.3 / [dim]PASS · FLAG · ESCALATE[/dim]"  right of judge.jev
+
+node firehose "Firehose / [dim]packet producer[/dim]"  above judge.door (gap: wide)
+node board    "Demo board / [dim]GitHub Pages[/dim]"   below judge.llama (gap: wide)
+
+edge firehose -> judge.door     "signed packets"  from: bottom  to: top
+edge judge.door -> judge.jev    "summary"         from: right   to: left
+edge judge.jev -> judge.llama   "probabilities"   from: right   to: left
+edge judge.llama -> board       "WebSocket"       from: bottom  to: top
+
+node firehose_repo "who/otel-judge-firehose"  style: repo  shape: none  right of firehose (gap: tight)
+node board_repo    "who/otel-judge-demo"      style: repo  shape: none  left of board (gap: tight)

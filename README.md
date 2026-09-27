@@ -6,13 +6,10 @@ A simple OpenTelemetry traffic assessor on Cloudflare. It takes a burst of OTel-
 
 **Mission:** keep that judgment small and honest. [**Jev**](https://typesafe.ai/blog/introducing-system-one-models-and-jev) (TypeSafe AI's new System One model) runs first as LLM-as-judge and writes probability priors. **Llama 3.3** on Workers AI runs second and writes the PASS / FLAG / ESCALATE verdict. No chat-bot cosplay -- just traffic in, a verdict out, a board you can watch.
 
-```mermaid
-flowchart LR
-  F[Firehose] -->|packets| J[Judge Worker]
-  J --> S1[Jev priors]
-  S1 --> S2[Llama verdict]
-  S2 --> B[Demo board]
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/flow-dark.svg">
+  <img alt="Firehose sends signed packets to the Worker door; inside otel-judge on Cloudflare the door passes a summary to Jev, whose probabilities go to Llama 3.3, which pushes the verdict over a WebSocket to the demo board." src="docs/flow-light.svg">
+</picture>
 
 ## Repos
 

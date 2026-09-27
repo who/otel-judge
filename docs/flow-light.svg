@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="994" height="498" viewBox="0 0 994 498" font-family="'DejaVu Sans Mono', 'Menlo', 'Consolas', 'Liberation Mono', 'Courier New', monospace" font-size="14px">
+  <defs>
+    <marker id="arrow-7c83a0" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c83a0"/>
+    </marker>
+    <marker id="arrow-7c83a0-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c83a0"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="994" height="498" fill="#ffffff"/>
+  <path d="M48 173 H945.8 a8 8 0 0 1 8 8 V288 a8 8 0 0 1 -8 8 H48 a8 8 0 0 1 -8 -8 V181 a8 8 0 0 1 8 -8 Z" fill="#f6f7fa" stroke="#dcdfe7"/>
+  <text x="737.8" y="201.4" fill="#1f2328" text-anchor="start">otel-judge on Cloudflare</text>
+  <path d="M62 216 H234 a8 8 0 0 1 8 8 V274 a8 8 0 0 1 -8 8 H62 a8 8 0 0 1 -8 -8 V224 a8 8 0 0 1 8 -8 Z" fill="#eef0f7" stroke="#8a90a8"/>
+  <text x="148" y="244.4" fill="#1f2328" text-anchor="middle">Worker door</text>
+  <text x="148" y="263.4" fill="#6e7781" text-anchor="middle">HMAC verify, dedupe</text>
+  <path d="M381.4 216 H536.4 a8 8 0 0 1 8 8 V274 a8 8 0 0 1 -8 8 H381.4 a8 8 0 0 1 -8 -8 V224 a8 8 0 0 1 8 -8 Z" fill="#eef0f7" stroke="#8a90a8"/>
+  <text x="458.9" y="244.4" fill="#1f2328" text-anchor="middle">Jev</text>
+  <text x="458.9" y="263.4" fill="#6e7781" text-anchor="middle">System One priors</text>
+  <path d="M734.8 216 H931.8 a8 8 0 0 1 8 8 V274 a8 8 0 0 1 -8 8 H734.8 a8 8 0 0 1 -8 -8 V224 a8 8 0 0 1 8 -8 Z" fill="#eef0f7" stroke="#8a90a8"/>
+  <text x="833.3" y="244.4" fill="#1f2328" text-anchor="middle">Llama 3.3</text>
+  <text x="833.3" y="263.4" fill="#6e7781" text-anchor="middle">PASS · FLAG · ESCALATE</text>
+  <path d="M79 40 H217 a8 8 0 0 1 8 8 V98 a8 8 0 0 1 -8 8 H79 a8 8 0 0 1 -8 -8 V48 a8 8 0 0 1 8 -8 Z" fill="#eef0f7" stroke="#8a90a8"/>
+  <text x="148" y="68.4" fill="#1f2328" text-anchor="middle">Firehose</text>
+  <text x="148" y="87.4" fill="#6e7781" text-anchor="middle">packet producer</text>
+  <path d="M776.8 392 H889.8 a8 8 0 0 1 8 8 V450 a8 8 0 0 1 -8 8 H776.8 a8 8 0 0 1 -8 -8 V400 a8 8 0 0 1 8 -8 Z" fill="#eef0f7" stroke="#8a90a8"/>
+  <text x="833.3" y="420.4" fill="#1f2328" text-anchor="middle">Demo board</text>
+  <text x="833.3" y="439.4" fill="#6e7781" text-anchor="middle">GitHub Pages</text>
+  <g font-size="12px">
+  <text x="249" y="77.2" fill="#6e7781" text-anchor="start">who/otel-judge-firehose</text>
+  </g>
+  <g font-size="12px">
+  <text x="607.8" y="429.2" fill="#6e7781" text-anchor="start">who/otel-judge-demo</text>
+  </g>
+  <path d="M 148 106 L 148 216" fill="none" stroke="#7c83a0" stroke-width="1.6" marker-end="url(#arrow-7c83a0)"/>
+  <rect x="84" y="151.5" width="128" height="19" fill="#ffffff"/>
+  <text x="148" y="165.9" fill="#1f2328" text-anchor="middle">signed packets</text>
+  <path d="M 242 249 L 373.4 249" fill="none" stroke="#7c83a0" stroke-width="1.6" marker-end="url(#arrow-7c83a0)"/>
+  <rect x="273.2" y="239.5" width="69" height="19" fill="#ffffff"/>
+  <text x="307.7" y="253.9" fill="#1f2328" text-anchor="middle">summary</text>
+  <path d="M 544.4 249 L 726.8 249" fill="none" stroke="#7c83a0" stroke-width="1.6" marker-end="url(#arrow-7c83a0)"/>
+  <rect x="575.6" y="239.5" width="120" height="19" fill="#ffffff"/>
+  <text x="635.6" y="253.9" fill="#1f2328" text-anchor="middle">probabilities</text>
+  <path d="M 833.3 282 L 833.3 392" fill="none" stroke="#7c83a0" stroke-width="1.6" marker-end="url(#arrow-7c83a0)"/>
+  <rect x="790.3" y="327.5" width="86" height="19" fill="#ffffff"/>
+  <text x="833.3" y="341.9" fill="#1f2328" text-anchor="middle">WebSocket</text>
+</svg>
